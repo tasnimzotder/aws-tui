@@ -30,17 +30,24 @@ type TableViewConfig[T any] struct {
 	SummaryFunc  func(items []T) string // optional, rendered above table
 	OnEnter      func(item T) tea.Cmd   // optional, nil = no drill-down
 	HeightOffset int                     // lines consumed by summary
+	PageSize     int                     // 0 = default (20)
 }
+
+const defaultPageSize = 20
 
 // TableView is a generic, reusable table-based view.
 type TableView[T any] struct {
-	config  TableViewConfig[T]
-	items   []T
-	table   table.Model
-	spinner spinner.Model
-	loading bool
-	err     error
-	allRows []table.Row
+	config      TableViewConfig[T]
+	items       []T
+	table       table.Model
+	spinner     spinner.Model
+	loading     bool
+	err         error
+	allRows     []table.Row
+	displayRows []table.Row
+	pageItems   []T
+	currentPage int
+	pageSize    int
 }
 
 // NewTableView creates a new TableView from the given config.
@@ -53,12 +60,64 @@ func NewTableView[T any](cfg TableViewConfig[T]) *TableView[T] {
 	)
 	t.SetStyles(theme.DefaultTableStyles())
 
-	return &TableView[T]{
-		config:  cfg,
-		table:   t,
-		spinner: theme.NewSpinner(),
-		loading: true,
+	ps := cfg.PageSize
+	if ps <= 0 {
+		ps = defaultPageSize
 	}
+
+	return &TableView[T]{
+		config:   cfg,
+		table:    t,
+		spinner:  theme.NewSpinner(),
+		loading:  true,
+		pageSize: ps,
+	}
+}
+
+func (v *TableView[T]) totalPages() int {
+	n := len(v.displayRows)
+	if n == 0 {
+		return 0
+	}
+	return (n + v.pageSize - 1) / v.pageSize
+}
+
+func (v *TableView[T]) applyPage() {
+	if len(v.displayRows) == 0 {
+		v.table.SetRows(nil)
+		v.pageItems = nil
+		return
+	}
+	start := v.currentPage * v.pageSize
+	end := min(start+v.pageSize, len(v.displayRows))
+	v.table.SetRows(v.displayRows[start:end])
+	// Build pageItems for correct cursor→item mapping
+	if start < len(v.items) {
+		v.pageItems = v.items[start:min(end, len(v.items))]
+	}
+	v.table.SetCursor(0)
+}
+
+func (v *TableView[T]) nextPage() {
+	if v.currentPage < v.totalPages()-1 {
+		v.currentPage++
+		v.applyPage()
+	}
+}
+
+func (v *TableView[T]) prevPage() {
+	if v.currentPage > 0 {
+		v.currentPage--
+		v.applyPage()
+	}
+}
+
+func (v *TableView[T]) paginationStatus() string {
+	total := v.totalPages()
+	if total <= 1 {
+		return ""
+	}
+	return fmt.Sprintf("Page %d/%d (%d items)", v.currentPage+1, total, len(v.displayRows))
 }
 
 func (v *TableView[T]) viewID() uintptr {
@@ -100,7 +159,9 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 			rows[i] = v.config.RowMapper(item)
 		}
 		v.allRows = rows
-		v.table.SetRows(rows)
+		v.displayRows = rows
+		v.currentPage = 0
+		v.applyPage()
 		return v, nil
 
 	case errViewMsg:
@@ -114,11 +175,17 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 			v.loading = true
 			v.err = nil
 			return v, tea.Batch(v.spinner.Tick, v.fetchData())
+		case "n":
+			v.nextPage()
+			return v, nil
+		case "p":
+			v.prevPage()
+			return v, nil
 		case "enter":
 			if v.config.OnEnter != nil {
 				idx := v.table.Cursor()
-				if idx >= 0 && idx < len(v.items) {
-					return v, v.config.OnEnter(v.items[idx])
+				if idx >= 0 && idx < len(v.pageItems) {
+					return v, v.config.OnEnter(v.pageItems[idx])
 				}
 			}
 		}
@@ -141,15 +208,24 @@ func (v *TableView[T]) View() string {
 	if v.err != nil {
 		return theme.ErrorStyle.Render(fmt.Sprintf("Error: %v", v.err))
 	}
+	out := ""
 	if v.config.SummaryFunc != nil {
-		return v.config.SummaryFunc(v.items) + "\n\n" + v.table.View()
+		out = v.config.SummaryFunc(v.items) + "\n\n"
 	}
-	return v.table.View()
+	out += v.table.View()
+	if status := v.paginationStatus(); status != "" {
+		out += "\n" + theme.MutedStyle.Render(status)
+	}
+	return out
 }
 
 // FilterableView implementation
 func (v *TableView[T]) AllRows() []table.Row    { return v.allRows }
-func (v *TableView[T]) SetRows(rows []table.Row) { v.table.SetRows(rows) }
+func (v *TableView[T]) SetRows(rows []table.Row) {
+	v.displayRows = rows
+	v.currentPage = 0
+	v.applyPage()
+}
 
 // ResizableView implementation
 func (v *TableView[T]) SetSize(width, height int) {
@@ -163,8 +239,8 @@ func (v *TableView[T]) CopyID() string {
 		return ""
 	}
 	idx := v.table.Cursor()
-	if idx >= 0 && idx < len(v.items) {
-		return v.config.CopyIDFunc(v.items[idx])
+	if idx >= 0 && idx < len(v.pageItems) {
+		return v.config.CopyIDFunc(v.pageItems[idx])
 	}
 	return ""
 }
@@ -174,8 +250,8 @@ func (v *TableView[T]) CopyARN() string {
 		return v.CopyID()
 	}
 	idx := v.table.Cursor()
-	if idx >= 0 && idx < len(v.items) {
-		return v.config.CopyARNFunc(v.items[idx])
+	if idx >= 0 && idx < len(v.pageItems) {
+		return v.config.CopyARNFunc(v.pageItems[idx])
 	}
 	return ""
 }

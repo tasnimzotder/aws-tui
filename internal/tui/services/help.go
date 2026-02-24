@@ -40,6 +40,8 @@ func renderHelp(ctx HelpContext, width, height int) string {
 		bindings = []helpBinding{
 			{"Enter", "Drill down"},
 			{"/", "Filter rows"},
+			{"n", "Next page"},
+			{"p", "Prev page"},
 			{"r", "Refresh data"},
 			{"c", "Copy ID"},
 			{"C", "Copy ARN"},
