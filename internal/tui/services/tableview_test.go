@@ -343,6 +343,81 @@ func TestHelpIncludesPaginationKeys(t *testing.T) {
 	}
 }
 
+func TestLoadMore(t *testing.T) {
+	loadCalls := 0
+	tv := NewTableView(TableViewConfig[testItem]{
+		PageSize: 3,
+		Columns:  []table.Column{{Title: "ID", Width: 10}},
+		FetchFunc: func(ctx context.Context) ([]testItem, error) {
+			return []testItem{{id: "a"}, {id: "b"}}, nil
+		},
+		RowMapper: func(item testItem) table.Row { return table.Row{item.id} },
+		LoadMoreFunc: func(ctx context.Context) ([]testItem, bool, error) {
+			loadCalls++
+			return []testItem{{id: "c"}, {id: "d"}}, false, nil
+		},
+	})
+
+	// Simulate initial data load
+	msg := tableDataMsg{viewID: tv.viewID(), items: []testItem{{id: "a"}, {id: "b"}}}
+	tv.Update(msg)
+
+	if len(tv.items) != 2 {
+		t.Fatalf("initial items = %d, want 2", len(tv.items))
+	}
+	if !tv.hasMore {
+		t.Fatal("hasMore should be true after initial load with LoadMoreFunc")
+	}
+
+	// Press 'L' to load more — triggers async, returns a Cmd
+	_, cmd := tv.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	if cmd == nil {
+		t.Fatal("pressing L should return a cmd")
+	}
+
+	// Simulate the response
+	moreMsg := tableMoreDataMsg{viewID: tv.viewID(), items: []testItem{{id: "c"}, {id: "d"}}, hasMore: false}
+	tv.Update(moreMsg)
+
+	if len(tv.items) != 4 {
+		t.Fatalf("after load more: items = %d, want 4", len(tv.items))
+	}
+	if len(tv.allRows) != 4 {
+		t.Errorf("after load more: allRows = %d, want 4", len(tv.allRows))
+	}
+	if tv.hasMore {
+		t.Error("hasMore should be false after load returned hasMore=false")
+	}
+}
+
+func TestLoadMoreStatus(t *testing.T) {
+	tv := newTestTableViewWithData(5, 3)
+	tv.hasMore = true
+	status := tv.paginationStatus()
+	if !contains(status, "5+") {
+		t.Errorf("status should show '5+' when hasMore, got: %s", status)
+	}
+	if !contains(status, "L to load more") {
+		t.Errorf("status should show 'L to load more', got: %s", status)
+	}
+}
+
+func TestLoadMoreNoFuncNoop(t *testing.T) {
+	tv := newTestTableViewWithData(5, 3)
+	// No LoadMoreFunc set
+	_, cmd := tv.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	if cmd != nil {
+		t.Error("L should be noop when LoadMoreFunc is nil")
+	}
+}
+
+func TestHelpIncludesLoadMore(t *testing.T) {
+	output := renderHelp(HelpContextTable, 80, 24)
+	if !contains(output, "Load more") {
+		t.Errorf("help should show 'Load more', got: %s", output)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)
 }

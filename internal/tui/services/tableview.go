@@ -18,6 +18,12 @@ type tableDataMsg struct {
 	items  any
 }
 
+type tableMoreDataMsg struct {
+	viewID  uintptr
+	items   any
+	hasMore bool
+}
+
 // TableViewConfig defines all the customizable parts of a table-based view.
 type TableViewConfig[T any] struct {
 	Title        string
@@ -30,7 +36,8 @@ type TableViewConfig[T any] struct {
 	SummaryFunc  func(items []T) string // optional, rendered above table
 	OnEnter      func(item T) tea.Cmd   // optional, nil = no drill-down
 	HeightOffset int                     // lines consumed by summary
-	PageSize     int                     // 0 = default (20)
+	PageSize     int                                        // 0 = default (20)
+	LoadMoreFunc func(ctx context.Context) ([]T, bool, error) // optional: returns items, hasMore, error
 }
 
 const defaultPageSize = 20
@@ -48,6 +55,8 @@ type TableView[T any] struct {
 	pageItems   []T
 	currentPage int
 	pageSize    int
+	hasMore     bool
+	loadingMore bool
 }
 
 // NewTableView creates a new TableView from the given config.
@@ -114,10 +123,22 @@ func (v *TableView[T]) prevPage() {
 
 func (v *TableView[T]) paginationStatus() string {
 	total := v.totalPages()
-	if total <= 1 {
+	itemCount := len(v.displayRows)
+	if total <= 1 && !v.hasMore {
 		return ""
 	}
-	return fmt.Sprintf("Page %d/%d (%d items)", v.currentPage+1, total, len(v.displayRows))
+	countStr := fmt.Sprintf("%d", itemCount)
+	if v.hasMore {
+		countStr += "+"
+	}
+	if total <= 1 {
+		return fmt.Sprintf("(%s items) L to load more", countStr)
+	}
+	status := fmt.Sprintf("Page %d/%d (%s items)", v.currentPage+1, total, countStr)
+	if v.hasMore {
+		status += "  L to load more"
+	}
+	return status
 }
 
 func (v *TableView[T]) viewID() uintptr {
@@ -142,6 +163,18 @@ func (v *TableView[T]) fetchData() tea.Cmd {
 	}
 }
 
+func (v *TableView[T]) fetchMore() tea.Cmd {
+	id := v.viewID()
+	loadMore := v.config.LoadMoreFunc
+	return func() tea.Msg {
+		items, hasMore, err := loadMore(context.Background())
+		if err != nil {
+			return errViewMsg{err: err}
+		}
+		return tableMoreDataMsg{viewID: id, items: items, hasMore: hasMore}
+	}
+}
+
 func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tableDataMsg:
@@ -162,11 +195,34 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.displayRows = rows
 		v.currentPage = 0
 		v.applyPage()
+		if v.config.LoadMoreFunc != nil {
+			v.hasMore = true // assume more until first LoadMore returns hasMore=false
+		}
 		return v, nil
 
 	case errViewMsg:
 		v.err = msg.err
 		v.loading = false
+		return v, nil
+
+	case tableMoreDataMsg:
+		if msg.viewID != v.viewID() {
+			return v, nil
+		}
+		newItems, ok := msg.items.([]T)
+		if !ok {
+			return v, nil
+		}
+		v.loadingMore = false
+		v.hasMore = msg.hasMore
+		v.items = append(v.items, newItems...)
+		newRows := make([]table.Row, len(newItems))
+		for i, item := range newItems {
+			newRows[i] = v.config.RowMapper(item)
+		}
+		v.allRows = append(v.allRows, newRows...)
+		v.displayRows = v.allRows
+		v.applyPage()
 		return v, nil
 
 	case tea.KeyMsg:
@@ -181,6 +237,11 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 		case "p":
 			v.prevPage()
 			return v, nil
+		case "L":
+			if v.config.LoadMoreFunc != nil && v.hasMore && !v.loadingMore {
+				v.loadingMore = true
+				return v, v.fetchMore()
+			}
 		case "enter":
 			if v.config.OnEnter != nil {
 				idx := v.table.Cursor()

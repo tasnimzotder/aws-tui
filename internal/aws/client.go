@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	awss3sdk "github.com/aws/aws-sdk-go-v2/service/s3"
 
 	awsautoscaling "tasnim.dev/aws-tui/internal/aws/autoscaling"
 	awsec2 "tasnim.dev/aws-tui/internal/aws/ec2"
@@ -17,6 +18,7 @@ import (
 	awsecs "tasnim.dev/aws-tui/internal/aws/ecs"
 	awselb "tasnim.dev/aws-tui/internal/aws/elb"
 	awslogs "tasnim.dev/aws-tui/internal/aws/logs"
+	awss3 "tasnim.dev/aws-tui/internal/aws/s3"
 	awsvpc "tasnim.dev/aws-tui/internal/aws/vpc"
 )
 
@@ -28,6 +30,7 @@ type ServiceClient struct {
 	ELB         *awselb.Client
 	Logs        *awslogs.Client
 	AutoScaling *awsautoscaling.Client
+	S3          *awss3.Client
 }
 
 func NewServiceClient(ctx context.Context, profile, region string) (*ServiceClient, error) {
@@ -46,5 +49,6 @@ func NewServiceClient(ctx context.Context, profile, region string) (*ServiceClie
 		ELB:         awselb.NewClient(elbv2.NewFromConfig(cfg)),
 		Logs:        awslogs.NewClient(cloudwatchlogs.NewFromConfig(cfg)),
 		AutoScaling: awsautoscaling.NewClient(applicationautoscaling.NewFromConfig(cfg)),
+		S3:          awss3.NewClient(awss3sdk.NewFromConfig(cfg)),
 	}, nil
 }

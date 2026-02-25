@@ -42,6 +42,7 @@ func renderHelp(ctx HelpContext, width, height int) string {
 			{"/", "Filter rows"},
 			{"n", "Next page"},
 			{"p", "Prev page"},
+			{"L", "Load more"},
 			{"r", "Refresh data"},
 			{"c", "Copy ID"},
 			{"C", "Copy ARN"},

@@ -18,6 +18,7 @@ A terminal UI for browsing and managing AWS resources, built with Go and [Bubble
 | **VPC** | VPCs → Subnets, Security Groups |
 | **ECR** | Repositories → Images |
 | **ELB** | Load Balancers → Listeners → Target Groups |
+| **S3** | Buckets → Objects (prefix/folder navigation) |
 | **Cost Explorer** | Month-to-date cost breakdown by service |
 
 ## Usage
@@ -51,6 +52,6 @@ go build -o aws-tui .
 - **Single region** — Queries one region at a time (no cross-region aggregation)
 - **Single account** — No multi-account or AWS Organizations support
 - **Client-side pagination** — All resources are fetched at once then paginated locally; very large accounts may see slow initial loads
-- **Limited service coverage** — Only the services listed above are supported; no S3, Lambda, RDS, IAM, etc.
+- **Limited service coverage** — Only the services listed above are supported; no Lambda, RDS, IAM, etc.
 - **No real-time updates** — Data is fetched on load; use `r` to manually refresh
 - **Cost data scope** — Cost dashboard shows month-to-date only; no custom date ranges or historical trends
