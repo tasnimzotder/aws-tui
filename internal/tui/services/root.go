@@ -24,12 +24,12 @@ type RootView struct {
 func NewRootView(client *awsclient.ServiceClient) *RootView {
 	items := []list.Item{
 		serviceItem{name: "EC2", desc: "Elastic Compute Cloud — Instances"},
-		serviceItem{name: "ECS", desc: "Elastic Container Service — Clusters, Services, Tasks"},
-		serviceItem{name: "VPC", desc: "Virtual Private Cloud — VPCs, Subnets, Security Groups"},
 		serviceItem{name: "ECR", desc: "Elastic Container Registry — Repositories, Images"},
+		serviceItem{name: "ECS", desc: "Elastic Container Service — Clusters, Services, Tasks"},
 		serviceItem{name: "ELB", desc: "Elastic Load Balancing — Load Balancers, Listeners, Target Groups"},
-		serviceItem{name: "S3", desc: "Simple Storage Service — Buckets, Objects"},
 		serviceItem{name: "IAM", desc: "Identity & Access Management — Users, Roles, Policies"},
+		serviceItem{name: "S3", desc: "Simple Storage Service — Buckets, Objects"},
+		serviceItem{name: "VPC", desc: "Virtual Private Cloud — VPCs, Subnets, Security Groups"},
 	}
 
 	l := list.New(items, list.NewDefaultDelegate(), 60, 14)

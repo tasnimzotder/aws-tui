@@ -4,6 +4,12 @@
 
 A terminal UI for browsing and managing AWS resources, built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
+## Screenshots
+
+![ECS Task Detail](assets/screenshots/ecs_task.png)
+
+![Cost Dashboard](assets/screenshots/cost.png)
+
 ## Features
 
 - **Services Browser** — Browse AWS resources in an interactive TUI with drill-down navigation, filtering, and clipboard copy
@@ -22,21 +28,29 @@ A terminal UI for browsing and managing AWS resources, built with Go and [Bubble
 | **IAM** | Users → Policies/Groups, Roles → Policies/Trust Policy, Policies → Attached Entities |
 | **Cost Explorer** | Month-to-date cost breakdown by service |
 
+## Install
+
+### Homebrew
+
+```sh
+brew install tasnimzotder/tap/aws-tui
+```
+
 ## Usage
 
 ```sh
 # Browse AWS services
-aws-tui services
+awstui services
 
 # View cost data
-aws-tui cost
+awstui cost
 ```
 
 Flags:
 
 ```sh
-aws-tui services -p <profile> -r <region>
-aws-tui cost -p <profile>
+awstui services -p <profile> -r <region>
+awstui cost -p <profile>
 ```
 
 Requires valid AWS credentials (via environment variables, `~/.aws/credentials`, or SSO).
@@ -44,7 +58,7 @@ Requires valid AWS credentials (via environment variables, `~/.aws/credentials`,
 ## Build
 
 ```sh
-go build -o aws-tui .
+go build -o awstui .
 ```
 
 ## Limitations

@@ -1,0 +1,38 @@
+class AwsTui < Formula
+  desc "Terminal UI for browsing AWS resources"
+  homepage "https://github.com/tasnimzotder/aws-tui"
+  version "{{VERSION_NUM}}"
+  license "MIT"
+
+  on_macos do
+    on_intel do
+      url "https://github.com/tasnimzotder/aws-tui/releases/download/{{VERSION}}/aws-tui_{{VERSION_NUM}}_darwin_amd64.tar.gz"
+      sha256 "{{SHA_DARWIN_AMD64}}"
+    end
+
+    on_arm do
+      url "https://github.com/tasnimzotder/aws-tui/releases/download/{{VERSION}}/aws-tui_{{VERSION_NUM}}_darwin_arm64.tar.gz"
+      sha256 "{{SHA_DARWIN_ARM64}}"
+    end
+  end
+
+  on_linux do
+    on_intel do
+      url "https://github.com/tasnimzotder/aws-tui/releases/download/{{VERSION}}/aws-tui_{{VERSION_NUM}}_linux_amd64.tar.gz"
+      sha256 "{{SHA_LINUX_AMD64}}"
+    end
+
+    on_arm do
+      url "https://github.com/tasnimzotder/aws-tui/releases/download/{{VERSION}}/aws-tui_{{VERSION_NUM}}_linux_arm64.tar.gz"
+      sha256 "{{SHA_LINUX_ARM64}}"
+    end
+  end
+
+  def install
+    bin.install "awstui"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/awstui --version", 2)
+  end
+end
