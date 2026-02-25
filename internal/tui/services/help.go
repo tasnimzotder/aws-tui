@@ -87,6 +87,12 @@ func detectHelpContext(v View) HelpContext {
 		return HelpContextRoot
 	case *ECSServiceSubMenuView:
 		return HelpContextRoot
+	case *IAMSubMenuView:
+		return HelpContextRoot
+	case *IAMUserSubMenuView:
+		return HelpContextRoot
+	case *IAMRoleSubMenuView:
+		return HelpContextRoot
 	}
 	if _, ok := v.(FilterableView); ok {
 		return HelpContextTable

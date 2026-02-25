@@ -29,6 +29,7 @@ func NewRootView(client *awsclient.ServiceClient) *RootView {
 		serviceItem{name: "ECR", desc: "Elastic Container Registry — Repositories, Images"},
 		serviceItem{name: "ELB", desc: "Elastic Load Balancing — Load Balancers, Listeners, Target Groups"},
 		serviceItem{name: "S3", desc: "Simple Storage Service — Buckets, Objects"},
+		serviceItem{name: "IAM", desc: "Identity & Access Management — Users, Roles, Policies"},
 	}
 
 	l := list.New(items, list.NewDefaultDelegate(), 60, 14)
@@ -90,6 +91,10 @@ func (v *RootView) handleSelection(name string) tea.Cmd {
 	case "S3":
 		return func() tea.Msg {
 			return PushViewMsg{View: NewS3BucketsView(v.client)}
+		}
+	case "IAM":
+		return func() tea.Msg {
+			return PushViewMsg{View: NewIAMSubMenuView(v.client)}
 		}
 	}
 	return nil
