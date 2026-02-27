@@ -94,7 +94,7 @@ func NewS3ObjectsView(client *awsclient.ServiceClient, bucket, prefix, region st
 				if obj.IsPrefix {
 					return nil
 				}
-				return pushView(NewS3ObjectContentView(client, obj, bucket, region))
+				return pushView(NewS3ContentLoaderView(client, obj, bucket, region))
 			},
 			"d": func(obj awss3.S3Object) tea.Cmd {
 				if obj.IsPrefix {

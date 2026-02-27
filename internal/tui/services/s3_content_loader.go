@@ -42,11 +42,6 @@ func NewS3ContentLoaderView(client *awsclient.ServiceClient, obj awss3.S3Object,
 	}
 }
 
-// NewS3ObjectContentView is a backward-compat alias for s3.go which still references this.
-func NewS3ObjectContentView(client *awsclient.ServiceClient, obj awss3.S3Object, bucket, region string) *S3ContentLoaderView {
-	return NewS3ContentLoaderView(client, obj, bucket, region)
-}
-
 func (v *S3ContentLoaderView) Title() string { return path.Base(v.key) }
 
 func (v *S3ContentLoaderView) Init() tea.Cmd {
