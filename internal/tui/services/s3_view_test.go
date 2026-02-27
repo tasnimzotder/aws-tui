@@ -3,6 +3,7 @@ package services
 import (
 	"strings"
 	"testing"
+	"time"
 
 	awss3 "tasnim.dev/aws-tui/internal/aws/s3"
 	"tasnim.dev/aws-tui/internal/constants"
@@ -250,6 +251,41 @@ func TestS3DownloadView_InitialView(t *testing.T) {
 	}
 	if !contains(view, "Downloads") {
 		t.Errorf("initial view should show default path, got: %s", view)
+	}
+}
+
+func TestS3DownloadView_CancelState(t *testing.T) {
+	obj := awss3.S3Object{Key: "file.zip", Size: 1024}
+	v := NewS3DownloadView(nil, obj, "bucket", "us-east-1")
+	if v.cancel == nil {
+		t.Error("cancel func should be initialized")
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{5 * time.Second, "5s"},
+		{45 * time.Second, "45s"},
+		{90 * time.Second, "1m30s"},
+		{3*time.Minute + 15*time.Second, "3m15s"},
+	}
+	for _, tt := range tests {
+		got := formatDuration(tt.d)
+		if got != tt.want {
+			t.Errorf("formatDuration(%v) = %q, want %q", tt.d, got, tt.want)
+		}
+	}
+}
+
+func TestS3DownloadView_ShowsFileSize(t *testing.T) {
+	obj := awss3.S3Object{Key: "big.zip", Size: 1024 * 1024}
+	v := NewS3DownloadView(nil, obj, "bucket", "us-east-1")
+	view := v.View()
+	if !strings.Contains(view, "1.0 MB") {
+		t.Errorf("should show file size, got: %s", view)
 	}
 }
 
