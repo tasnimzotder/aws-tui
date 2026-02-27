@@ -174,3 +174,25 @@ func (c *Client) GetObject(ctx context.Context, bucket, key, region string) ([]b
 	}
 	return data, nil
 }
+
+// GetObjectStream returns the object body as a stream with its content length.
+// The caller must close the returned ReadCloser.
+func (c *Client) GetObjectStream(ctx context.Context, bucket, key, region string) (io.ReadCloser, int64, error) {
+	input := &awss3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}
+	var opts []func(*awss3.Options)
+	if region != "" {
+		opts = append(opts, func(o *awss3.Options) { o.Region = region })
+	}
+	out, err := c.api.GetObject(ctx, input, opts...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("GetObjectStream: %w", err)
+	}
+	var size int64
+	if out.ContentLength != nil {
+		size = *out.ContentLength
+	}
+	return out.Body, size, nil
+}

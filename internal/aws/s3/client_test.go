@@ -311,3 +311,42 @@ func TestGetObject_Error(t *testing.T) {
 		t.Errorf("error should wrap with GetObject context, got: %v", err)
 	}
 }
+
+func TestGetObjectStream(t *testing.T) {
+	body := io.NopCloser(strings.NewReader("streaming content"))
+	mock := &mockS3API{
+		getObjectFunc: func(ctx context.Context, params *awss3.GetObjectInput, optFns ...func(*awss3.Options)) (*awss3.GetObjectOutput, error) {
+			return &awss3.GetObjectOutput{
+				Body:          body,
+				ContentLength: awssdk.Int64(17),
+			}, nil
+		},
+	}
+	client := NewClient(mock)
+	reader, size, err := client.GetObjectStream(context.Background(), "bucket", "key.txt", "us-east-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer reader.Close()
+
+	if size != 17 {
+		t.Errorf("size = %d, want 17", size)
+	}
+	data, _ := io.ReadAll(reader)
+	if string(data) != "streaming content" {
+		t.Errorf("data = %q, want 'streaming content'", data)
+	}
+}
+
+func TestGetObjectStream_Error(t *testing.T) {
+	mock := &mockS3API{
+		getObjectFunc: func(ctx context.Context, params *awss3.GetObjectInput, optFns ...func(*awss3.Options)) (*awss3.GetObjectOutput, error) {
+			return nil, fmt.Errorf("access denied")
+		},
+	}
+	client := NewClient(mock)
+	_, _, err := client.GetObjectStream(context.Background(), "bucket", "key.txt", "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
