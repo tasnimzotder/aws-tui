@@ -3,6 +3,7 @@ package s3
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -13,9 +14,10 @@ import (
 )
 
 type mockS3API struct {
-	listBucketsFunc     func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error)
+	listBucketsFunc       func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error)
 	getBucketLocationFunc func(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error)
 	listObjectsV2Func    func(ctx context.Context, params *awss3.ListObjectsV2Input, optFns ...func(*awss3.Options)) (*awss3.ListObjectsV2Output, error)
+	getObjectFunc         func(ctx context.Context, params *awss3.GetObjectInput, optFns ...func(*awss3.Options)) (*awss3.GetObjectOutput, error)
 }
 
 func (m *mockS3API) ListBuckets(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
@@ -28,6 +30,10 @@ func (m *mockS3API) GetBucketLocation(ctx context.Context, params *awss3.GetBuck
 
 func (m *mockS3API) ListObjectsV2(ctx context.Context, params *awss3.ListObjectsV2Input, optFns ...func(*awss3.Options)) (*awss3.ListObjectsV2Output, error) {
 	return m.listObjectsV2Func(ctx, params, optFns...)
+}
+
+func (m *mockS3API) GetObject(ctx context.Context, params *awss3.GetObjectInput, optFns ...func(*awss3.Options)) (*awss3.GetObjectOutput, error) {
+	return m.getObjectFunc(ctx, params, optFns...)
 }
 
 func TestListBuckets(t *testing.T) {
@@ -261,5 +267,47 @@ func TestListObjects_Pagination(t *testing.T) {
 	}
 	if len(result.Objects) != 1 {
 		t.Fatalf("expected 1 object, got %d", len(result.Objects))
+	}
+}
+
+func TestGetObject(t *testing.T) {
+	mock := &mockS3API{
+		getObjectFunc: func(ctx context.Context, params *awss3.GetObjectInput, optFns ...func(*awss3.Options)) (*awss3.GetObjectOutput, error) {
+			if awssdk.ToString(params.Bucket) != "my-bucket" {
+				t.Errorf("Bucket = %s, want my-bucket", awssdk.ToString(params.Bucket))
+			}
+			if awssdk.ToString(params.Key) != "hello.txt" {
+				t.Errorf("Key = %s, want hello.txt", awssdk.ToString(params.Key))
+			}
+			return &awss3.GetObjectOutput{
+				Body: io.NopCloser(strings.NewReader("hello world")),
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	data, err := client.GetObject(context.Background(), "my-bucket", "hello.txt", "us-east-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(data) != "hello world" {
+		t.Errorf("data = %q, want %q", string(data), "hello world")
+	}
+}
+
+func TestGetObject_Error(t *testing.T) {
+	mock := &mockS3API{
+		getObjectFunc: func(ctx context.Context, params *awss3.GetObjectInput, optFns ...func(*awss3.Options)) (*awss3.GetObjectOutput, error) {
+			return nil, fmt.Errorf("access denied")
+		},
+	}
+
+	client := NewClient(mock)
+	_, err := client.GetObject(context.Background(), "my-bucket", "secret.txt", "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "GetObject") {
+		t.Errorf("error should wrap with GetObject context, got: %v", err)
 	}
 }

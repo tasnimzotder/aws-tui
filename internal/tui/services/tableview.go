@@ -34,10 +34,12 @@ type TableViewConfig[T any] struct {
 	CopyIDFunc   func(item T) string
 	CopyARNFunc  func(item T) string
 	SummaryFunc  func(items []T) string // optional, rendered above table
-	OnEnter      func(item T) tea.Cmd   // optional, nil = no drill-down
-	HeightOffset int                     // lines consumed by summary
-	PageSize     int                                        // 0 = default (20)
-	LoadMoreFunc func(ctx context.Context) ([]T, bool, error) // optional: returns items, hasMore, error
+	OnEnter      func(item T) tea.Cmd                         // optional, nil = no drill-down
+	KeyHandlers  map[string]func(item T) tea.Cmd               // optional, custom key bindings per view
+	HelpCtx      *HelpContext                                   // optional, override help context
+	HeightOffset int                                            // lines consumed by summary
+	PageSize     int                                            // 0 = default (20)
+	LoadMoreFunc func(ctx context.Context) ([]T, bool, error)  // optional: returns items, hasMore, error
 }
 
 const defaultPageSize = 20
@@ -145,7 +147,8 @@ func (v *TableView[T]) viewID() uintptr {
 	return uintptr(unsafe.Pointer(v))
 }
 
-func (v *TableView[T]) Title() string { return v.config.Title }
+func (v *TableView[T]) Title() string          { return v.config.Title }
+func (v *TableView[T]) HelpContext() *HelpContext { return v.config.HelpCtx }
 
 func (v *TableView[T]) Init() tea.Cmd {
 	return tea.Batch(v.spinner.Tick, v.fetchData())
@@ -247,6 +250,13 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 				idx := v.table.Cursor()
 				if idx >= 0 && idx < len(v.pageItems) {
 					return v, v.config.OnEnter(v.pageItems[idx])
+				}
+			}
+		default:
+			if handler, ok := v.config.KeyHandlers[msg.String()]; ok {
+				idx := v.table.Cursor()
+				if idx >= 0 && idx < len(v.pageItems) {
+					return v, handler(v.pageItems[idx])
 				}
 			}
 		}

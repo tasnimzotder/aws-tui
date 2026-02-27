@@ -44,9 +44,11 @@ func NewS3ObjectsView(client *awsclient.ServiceClient, bucket, prefix, region st
 
 	var nextToken string
 
+	s3HelpCtx := HelpContextS3Objects
 	return NewTableView(TableViewConfig[awss3.S3Object]{
 		Title:       title,
 		LoadingText: "Loading objects...",
+		HelpCtx:     &s3HelpCtx,
 		Columns: []table.Column{
 			{Title: "Name", Width: 40},
 			{Title: "Size", Width: 12},
@@ -86,6 +88,20 @@ func NewS3ObjectsView(client *awsclient.ServiceClient, bucket, prefix, region st
 				return pushView(NewS3ObjectsView(client, bucket, obj.Key, region))
 			}
 			return nil
+		},
+		KeyHandlers: map[string]func(awss3.S3Object) tea.Cmd{
+			"v": func(obj awss3.S3Object) tea.Cmd {
+				if obj.IsPrefix {
+					return nil
+				}
+				return pushView(NewS3ObjectContentView(client, obj, bucket, region))
+			},
+			"d": func(obj awss3.S3Object) tea.Cmd {
+				if obj.IsPrefix {
+					return nil
+				}
+				return pushView(NewS3DownloadView(client, obj, bucket, region))
+			},
 		},
 		LoadMoreFunc: func(ctx context.Context) ([]awss3.S3Object, bool, error) {
 			if nextToken == "" {

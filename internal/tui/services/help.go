@@ -12,9 +12,10 @@ import (
 type HelpContext int
 
 const (
-	HelpContextRoot   HelpContext = iota
+	HelpContextRoot       HelpContext = iota
 	HelpContextTable
 	HelpContextDetail
+	HelpContextS3Objects
 )
 
 type helpBinding struct {
@@ -64,6 +65,24 @@ func renderHelp(ctx HelpContext, width, height int) string {
 			{"?", "Toggle this help"},
 			{"q", "Quit"},
 		}
+	case HelpContextS3Objects:
+		title = "Keybindings — S3 Objects"
+		bindings = []helpBinding{
+			{"Enter", "Open folder"},
+			{"v", "View content"},
+			{"d", "Download"},
+			{"/", "Filter rows"},
+			{"n", "Next page"},
+			{"p", "Prev page"},
+			{"L", "Load more"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"C", "Copy ARN"},
+			{"j/k", "Navigate up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
 	}
 
 	var b strings.Builder
@@ -76,8 +95,20 @@ func renderHelp(ctx HelpContext, width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
+// HelpContextProvider is implemented by views that provide a custom help context.
+type HelpContextProvider interface {
+	HelpContext() *HelpContext
+}
+
 // detectHelpContext determines the help context from the current view.
 func detectHelpContext(v View) HelpContext {
+	// Check if view provides its own help context
+	if hcp, ok := v.(HelpContextProvider); ok {
+		if ctx := hcp.HelpContext(); ctx != nil {
+			return *ctx
+		}
+	}
+
 	switch v.(type) {
 	case *TaskDetailView:
 		return HelpContextDetail

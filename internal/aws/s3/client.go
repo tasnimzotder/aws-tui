@@ -3,6 +3,7 @@ package s3
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ type S3API interface {
 	ListBuckets(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error)
 	GetBucketLocation(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error)
 	ListObjectsV2(ctx context.Context, params *awss3.ListObjectsV2Input, optFns ...func(*awss3.Options)) (*awss3.ListObjectsV2Output, error)
+	GetObject(ctx context.Context, params *awss3.GetObjectInput, optFns ...func(*awss3.Options)) (*awss3.GetObjectOutput, error)
 }
 
 type Client struct {
@@ -145,4 +147,30 @@ func (c *Client) ListObjects(ctx context.Context, bucket, prefix, continuationTo
 	}
 
 	return result, nil
+}
+
+func (c *Client) GetObject(ctx context.Context, bucket, key, region string) ([]byte, error) {
+	input := &awss3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}
+
+	var opts []func(*awss3.Options)
+	if region != "" {
+		opts = append(opts, func(o *awss3.Options) {
+			o.Region = region
+		})
+	}
+
+	out, err := c.api.GetObject(ctx, input, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("GetObject: %w", err)
+	}
+	defer out.Body.Close()
+
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return nil, fmt.Errorf("GetObject read body: %w", err)
+	}
+	return data, nil
 }

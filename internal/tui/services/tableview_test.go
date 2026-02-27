@@ -416,15 +416,80 @@ func TestHelpIncludesLoadMore(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
+func TestKeyHandlers(t *testing.T) {
+	var handled string
+	tv := NewTableView(TableViewConfig[testItem]{
+		PageSize:  20,
+		Columns:   []table.Column{{Title: "ID", Width: 10}},
+		FetchFunc: func(ctx context.Context) ([]testItem, error) { return nil, nil },
+		RowMapper: func(item testItem) table.Row { return table.Row{item.id} },
+		KeyHandlers: map[string]func(testItem) tea.Cmd{
+			"v": func(item testItem) tea.Cmd {
+				handled = item.id
+				return nil
+			},
+		},
+	})
+
+	// Load items
+	items := []testItem{{id: "file-a"}, {id: "file-b"}}
+	rows := []table.Row{{"file-a"}, {"file-b"}}
+	tv.items = items
+	tv.allRows = rows
+	tv.displayRows = rows
+	tv.loading = false
+	tv.applyPage()
+
+	// Press 'v' should trigger handler for first item
+	tv.Update(tea.KeyPressMsg{Code: 'v', Text: "v"})
+	if handled != "file-a" {
+		t.Errorf("KeyHandler got item %q, want file-a", handled)
+	}
 }
 
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+func TestKeyHandlersWithPagination(t *testing.T) {
+	var handled string
+	tv := NewTableView(TableViewConfig[testItem]{
+		PageSize:  2,
+		Columns:   []table.Column{{Title: "ID", Width: 10}},
+		FetchFunc: func(ctx context.Context) ([]testItem, error) { return nil, nil },
+		RowMapper: func(item testItem) table.Row { return table.Row{item.id} },
+		KeyHandlers: map[string]func(testItem) tea.Cmd{
+			"d": func(item testItem) tea.Cmd {
+				handled = item.id
+				return nil
+			},
+		},
+	})
+
+	items := make([]testItem, 5)
+	rows := make([]table.Row, 5)
+	for i := range 5 {
+		items[i] = testItem{id: fmt.Sprintf("item-%d", i)}
+		rows[i] = table.Row{fmt.Sprintf("item-%d", i)}
 	}
-	return false
+	tv.items = items
+	tv.allRows = rows
+	tv.displayRows = rows
+	tv.loading = false
+	tv.applyPage()
+
+	// Go to page 1
+	tv.nextPage()
+
+	// Press 'd' should get item-2 (first item on page 1)
+	tv.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	if handled != "item-2" {
+		t.Errorf("KeyHandler got item %q, want item-2", handled)
+	}
+}
+
+func TestHelpContextS3Objects(t *testing.T) {
+	output := renderHelp(HelpContextS3Objects, 80, 24)
+	if !contains(output, "View content") {
+		t.Errorf("S3 help should show 'View content', got: %s", output)
+	}
+	if !contains(output, "Download") {
+		t.Errorf("S3 help should show 'Download', got: %s", output)
+	}
 }
