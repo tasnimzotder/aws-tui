@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awsec2 "tasnim.dev/aws-tui/internal/aws/ec2"

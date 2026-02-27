@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awsecs "tasnim.dev/aws-tui/internal/aws/ecs"
@@ -114,7 +114,7 @@ func (v *ECSServiceSubMenuView) Title() string { return v.serviceName }
 func (v *ECSServiceSubMenuView) Init() tea.Cmd  { return nil }
 func (v *ECSServiceSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "enter" {
 			selected, ok := v.list.SelectedItem().(ecsServiceMenuItem)
 			if !ok {

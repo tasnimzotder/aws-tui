@@ -1,8 +1,8 @@
 package services
 
 import (
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 )
@@ -50,7 +50,7 @@ func (v *RootView) Init() tea.Cmd { return nil }
 
 func (v *RootView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "enter":
 			selected, ok := v.list.SelectedItem().(serviceItem)

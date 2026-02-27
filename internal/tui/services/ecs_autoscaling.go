@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awsautoscaling "tasnim.dev/aws-tui/internal/aws/autoscaling"
@@ -70,7 +70,7 @@ func (v *ECSAutoScalingView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case ecsAutoScalingMsg:
 		v.loading = false
-		v.viewport = viewport.New(v.width, v.height)
+		v.viewport = viewport.New(viewport.WithWidth(v.width), viewport.WithHeight(v.height))
 		v.viewport.SetContent(v.renderContent(msg.targets, msg.policies))
 		v.ready = true
 		return v, nil
@@ -80,7 +80,7 @@ func (v *ECSAutoScalingView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.loading = false
 		return v, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "r" {
 			v.loading = true
 			v.err = nil
@@ -149,8 +149,8 @@ func (v *ECSAutoScalingView) SetSize(width, height int) {
 	v.width = width
 	v.height = height
 	if v.ready {
-		v.viewport.Width = width
-		v.viewport.Height = height
+		v.viewport.SetWidth(width)
+		v.viewport.SetHeight(height)
 	}
 }
 

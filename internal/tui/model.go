@@ -6,10 +6,10 @@ import (
 	"math"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/guptarohit/asciigraph"
 
 	awscost "tasnim.dev/aws-tui/internal/aws/cost"
@@ -47,6 +47,7 @@ func NewModel(client *awscost.Client, profile string, accountID string) Model {
 		table.WithRows([]table.Row{}),
 		table.WithFocused(true),
 		table.WithHeight(10),
+		table.WithWidth(80),
 	)
 	t.SetStyles(theme.DefaultTableStyles())
 
@@ -78,7 +79,7 @@ func (m Model) fetchCost() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -169,34 +170,35 @@ func (m Model) renderMetrics() string {
 	return metrics + "\n" + forecast
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	header := m.renderHeader()
 
+	var content string
 	if m.loading {
-		return dashboardStyle.Render(
+		content = dashboardStyle.Render(
 			header + "\n\n" + m.spinner.View() + " Fetching cost data...\n",
 		)
-	}
-
-	if m.err != nil {
-		return dashboardStyle.Render(
+	} else if m.err != nil {
+		content = dashboardStyle.Render(
 			header + "\n\n" + errorStyle.Render(fmt.Sprintf("Error: %v", m.err)) +
 				"\n\n" + helpStyle.Render("Press r to retry • q to quit"),
 		)
+	} else if m.data == nil {
+		content = dashboardStyle.Render(header + "\n\nNo data available.\n")
+	} else {
+		content = dashboardStyle.Render(
+			headerStyle.Render(header) + "\n\n" +
+				m.renderMetrics() + "\n" +
+				m.buildAnomalyView() +
+				m.buildChart() +
+				"\n" + metricLabelStyle.Render("Top Services") + "\n" + m.table.View() + "\n" +
+				helpStyle.Render("Press q to quit • r to refresh"),
+		)
 	}
 
-	if m.data == nil {
-		return dashboardStyle.Render(header + "\n\nNo data available.\n")
-	}
-
-	return dashboardStyle.Render(
-		headerStyle.Render(header) + "\n\n" +
-			m.renderMetrics() + "\n" +
-			m.buildAnomalyView() +
-			m.buildChart() +
-			"\n" + metricLabelStyle.Render("Top Services") + "\n" + m.table.View() + "\n" +
-			helpStyle.Render("Press q to quit • r to refresh"),
-	)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (m Model) buildAnomalyView() string {
@@ -230,6 +232,7 @@ func (m Model) resizeTable() Model {
 		{Title: "Service", Width: serviceColWidth},
 		{Title: "MTD Cost", Width: costColWidth},
 	})
+	m.table.SetWidth(contentWidth)
 
 	tableHeight := m.height - 19 // header+metrics+chart+help
 	if tableHeight < 3 {

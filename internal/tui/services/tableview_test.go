@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 )
 
 type testItem struct {
@@ -167,14 +167,14 @@ func TestKeyBindingsPagination(t *testing.T) {
 	tv := newTestTableViewWithData(5, 2)
 
 	// Press 'n' for next page
-	updated, _ := tv.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	updated, _ := tv.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
 	tvUp := updated.(*TableView[testItem])
 	if tvUp.currentPage != 1 {
 		t.Errorf("after 'n': currentPage = %d, want 1", tvUp.currentPage)
 	}
 
 	// Press 'p' for prev page
-	updated, _ = tvUp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	updated, _ = tvUp.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
 	tvUp = updated.(*TableView[testItem])
 	if tvUp.currentPage != 0 {
 		t.Errorf("after 'p': currentPage = %d, want 0", tvUp.currentPage)
@@ -255,9 +255,7 @@ func TestOnEnterUsesPageItems(t *testing.T) {
 	tv.nextPage()
 
 	// Press enter on first row of page 1 (should be item-2)
-	tv.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{13}})
-	// Use the "enter" key string
-	tv.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tv.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	if entered != "item-2" {
 		t.Errorf("OnEnter got item %q, want item-2", entered)
@@ -370,7 +368,7 @@ func TestLoadMore(t *testing.T) {
 	}
 
 	// Press 'L' to load more — triggers async, returns a Cmd
-	_, cmd := tv.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	_, cmd := tv.Update(tea.KeyPressMsg{Code: 'L', Text: "L"})
 	if cmd == nil {
 		t.Fatal("pressing L should return a cmd")
 	}
@@ -405,7 +403,7 @@ func TestLoadMoreStatus(t *testing.T) {
 func TestLoadMoreNoFuncNoop(t *testing.T) {
 	tv := newTestTableViewWithData(5, 3)
 	// No LoadMoreFunc set
-	_, cmd := tv.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	_, cmd := tv.Update(tea.KeyPressMsg{Code: 'L', Text: "L"})
 	if cmd != nil {
 		t.Error("L should be noop when LoadMoreFunc is nil")
 	}

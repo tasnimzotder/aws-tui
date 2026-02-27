@@ -5,11 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	"tasnim.dev/aws-tui/internal/tui/theme"
@@ -86,7 +85,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Help overlay: ? toggles, Esc dismisses
 		if m.showHelp {
 			if msg.String() == "?" || msg.String() == "esc" || msg.String() == "q" {
@@ -133,7 +132,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	// Build breadcrumb
 	titles := make([]string, len(m.stack))
 	for i, v := range m.stack {
@@ -180,24 +179,25 @@ func (m Model) View() string {
 		help = theme.HelpStyle.Render("Esc back • r refresh • / filter • c copy • ? help • q quit")
 	}
 
-	base := theme.DashboardStyle.Render(
-		theme.HeaderStyle.Render(header) + "\n\n" +
-			filterBar +
-			content + "\n" +
-			help,
-	)
-
-	// Help overlay
+	var screen string
 	if m.showHelp && len(m.stack) > 0 {
 		ctx := detectHelpContext(m.stack[len(m.stack)-1])
-		overlay := renderHelp(ctx, m.width, m.height)
-		return overlay
+		screen = renderHelp(ctx, m.width, m.height)
+	} else {
+		screen = theme.DashboardStyle.Render(
+			theme.HeaderStyle.Render(header) + "\n\n" +
+				filterBar +
+				content + "\n" +
+				help,
+		)
 	}
 
-	return base
+	v := tea.NewView(screen)
+	v.AltScreen = true
+	return v
 }
 
-func (m Model) updateFilterMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateFilterMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.filtering = false
@@ -221,7 +221,7 @@ func (m Model) updateFilterMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -250,18 +250,16 @@ func (m Model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cv, ok := m.currentCopyable(); ok {
 			id := cv.CopyID()
 			if id != "" {
-				clipboard.WriteAll(id)
 				m.copiedText = id
-				return m, m.clearCopiedAfter()
+				return m, tea.Batch(tea.SetClipboard(id), m.clearCopiedAfter())
 			}
 		}
 	case "C":
 		if cv, ok := m.currentCopyable(); ok {
 			arn := cv.CopyARN()
 			if arn != "" {
-				clipboard.WriteAll(arn)
 				m.copiedText = arn
-				return m, m.clearCopiedAfter()
+				return m, tea.Batch(tea.SetClipboard(arn), m.clearCopiedAfter())
 			}
 		}
 	}

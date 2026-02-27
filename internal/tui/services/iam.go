@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awsiam "tasnim.dev/aws-tui/internal/aws/iam"
@@ -50,7 +50,7 @@ func (v *IAMSubMenuView) Title() string { return "IAM" }
 func (v *IAMSubMenuView) Init() tea.Cmd { return nil }
 func (v *IAMSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "enter" {
 			selected, ok := v.list.SelectedItem().(iamMenuItem)
 			if !ok {
@@ -192,7 +192,7 @@ func (v *IAMUserSubMenuView) Title() string { return v.userName }
 func (v *IAMUserSubMenuView) Init() tea.Cmd { return nil }
 func (v *IAMUserSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "enter" {
 			selected, ok := v.list.SelectedItem().(iamUserSubMenuItem)
 			if !ok {
@@ -251,7 +251,7 @@ func (v *IAMRoleSubMenuView) Title() string { return v.roleName }
 func (v *IAMRoleSubMenuView) Init() tea.Cmd { return nil }
 func (v *IAMRoleSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "enter" {
 			selected, ok := v.list.SelectedItem().(iamRoleSubMenuItem)
 			if !ok {
@@ -386,7 +386,7 @@ func NewIAMTrustPolicyView(roleName, trustDoc string) *IAMTrustPolicyView {
 
 func (v *IAMTrustPolicyView) Title() string { return "Trust Policy" }
 func (v *IAMTrustPolicyView) Init() tea.Cmd {
-	v.viewport = viewport.New(v.width, v.height)
+	v.viewport = viewport.New(viewport.WithWidth(v.width), viewport.WithHeight(v.height))
 	v.viewport.SetContent(v.content)
 	v.ready = true
 	return nil
@@ -409,7 +409,7 @@ func (v *IAMTrustPolicyView) SetSize(width, height int) {
 	v.width = width
 	v.height = height
 	if v.ready {
-		v.viewport.Width = width
-		v.viewport.Height = height
+		v.viewport.SetWidth(width)
+		v.viewport.SetHeight(height)
 	}
 }

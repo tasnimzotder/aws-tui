@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awsvpc "tasnim.dev/aws-tui/internal/aws/vpc"
@@ -81,7 +81,7 @@ func (v *VPCSubMenuView) Title() string { return v.vpcName }
 func (v *VPCSubMenuView) Init() tea.Cmd { return nil }
 func (v *VPCSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "enter" {
 			selected, ok := v.list.SelectedItem().(vpcSubMenuItem)
 			if !ok {

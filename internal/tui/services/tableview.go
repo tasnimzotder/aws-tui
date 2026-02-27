@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 
 	"tasnim.dev/aws-tui/internal/tui/theme"
 )
@@ -225,7 +225,7 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.applyPage()
 		return v, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "r":
 			v.loading = true

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awsecs "tasnim.dev/aws-tui/internal/aws/ecs"
@@ -170,7 +170,7 @@ func (v *TaskDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.loading = false
 		return v, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "r":
 			v.loading = true
@@ -280,10 +280,10 @@ func (v *TaskDetailView) initViewports() {
 		vpHeight = 3
 	}
 
-	v.detailVP = viewport.New(v.width, vpHeight)
+	v.detailVP = viewport.New(viewport.WithWidth(v.width), viewport.WithHeight(vpHeight))
 	v.detailVP.SetContent(v.renderDetail())
 
-	v.logsVP = viewport.New(v.width, vpHeight)
+	v.logsVP = viewport.New(viewport.WithWidth(v.width), viewport.WithHeight(vpHeight))
 	v.ready = true
 }
 
@@ -383,9 +383,9 @@ func (v *TaskDetailView) SetSize(width, height int) {
 		if vpHeight < 3 {
 			vpHeight = 3
 		}
-		v.detailVP.Width = width
-		v.detailVP.Height = vpHeight
-		v.logsVP.Width = width
-		v.logsVP.Height = vpHeight
+		v.detailVP.SetWidth(width)
+		v.detailVP.SetHeight(vpHeight)
+		v.logsVP.SetWidth(width)
+		v.logsVP.SetHeight(vpHeight)
 	}
 }

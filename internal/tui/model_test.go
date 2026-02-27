@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	awscost "tasnim.dev/aws-tui/internal/aws/cost"
 	"tasnim.dev/aws-tui/internal/utils"
 )
@@ -15,7 +15,7 @@ func TestView_Loading(t *testing.T) {
 	m := NewModel(nil, "test-profile", "123456789012")
 	m.loading = true
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Fetching cost data") {
 		t.Error("loading view should contain 'Fetching cost data'")
 	}
@@ -49,7 +49,7 @@ func TestView_WithData(t *testing.T) {
 	}
 	m.table.SetRows(m.buildRows())
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "$12.34") {
 		t.Error("view should show today's spend")
 	}
@@ -114,7 +114,7 @@ func TestView_Error(t *testing.T) {
 	m.loading = false
 	m.err = fmt.Errorf("access denied")
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "access denied") {
 		t.Error("error view should show error message")
 	}
@@ -203,7 +203,7 @@ func TestView_WithMoMDecrease(t *testing.T) {
 	}
 	m.table.SetRows(m.buildRows())
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "$210.00") {
 		t.Error("view should show last month MTD spend")
 	}
@@ -236,7 +236,7 @@ func TestView_WithMoMIncrease(t *testing.T) {
 	}
 	m.table.SetRows(m.buildRows())
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "up") {
 		t.Error("view should indicate increase direction")
 	}
@@ -267,7 +267,7 @@ func TestView_WithAnomalies(t *testing.T) {
 	}
 	m.table.SetRows(m.buildRows())
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Anomalies") {
 		t.Error("view should show anomalies header")
 	}

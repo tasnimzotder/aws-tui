@@ -3,8 +3,8 @@ package services
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
 
 	"tasnim.dev/aws-tui/internal/tui/theme"
 )

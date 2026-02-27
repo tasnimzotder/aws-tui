@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
@@ -37,7 +37,7 @@ func NewCostCmd() *cobra.Command {
 			client := awscost.NewClient(awsCfg)
 
 			model := tui.NewModel(client, profile, accountID)
-			p := tea.NewProgram(model, tea.WithAltScreen())
+			p := tea.NewProgram(model)
 			if _, err := p.Run(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
