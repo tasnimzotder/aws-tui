@@ -16,6 +16,7 @@ const (
 	HelpContextTable
 	HelpContextDetail
 	HelpContextS3Objects
+	HelpContextTextView
 )
 
 type helpBinding struct {
@@ -83,6 +84,18 @@ func renderHelp(ctx HelpContext, width, height int) string {
 			{"?", "Toggle this help"},
 			{"q", "Quit"},
 		}
+	case HelpContextTextView:
+		title = "Keybindings — Text Viewer"
+		bindings = []helpBinding{
+			{"/", "Search"},
+			{"n", "Next match"},
+			{"N", "Prev match"},
+			{"w", "Toggle word wrap"},
+			{"j/k", "Scroll up/down"},
+			{"Esc", "Go back / close search"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
 	}
 
 	var b strings.Builder
@@ -110,6 +123,8 @@ func detectHelpContext(v View) HelpContext {
 	}
 
 	switch v.(type) {
+	case *TextView:
+		return HelpContextTextView
 	case *TaskDetailView:
 		return HelpContextDetail
 	case *RootView:

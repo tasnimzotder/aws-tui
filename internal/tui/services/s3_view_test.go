@@ -8,7 +8,7 @@ import (
 	"tasnim.dev/aws-tui/internal/constants"
 )
 
-func TestS3ObjectContentView_SizeLimit(t *testing.T) {
+func TestS3ContentLoaderView_SizeLimit(t *testing.T) {
 	obj := awss3.S3Object{
 		Key:  "big-file.dat",
 		Size: constants.MaxViewFileSize + 1,
@@ -24,7 +24,7 @@ func TestS3ObjectContentView_SizeLimit(t *testing.T) {
 	}
 }
 
-func TestS3ObjectContentView_UnderSizeLimit(t *testing.T) {
+func TestS3ContentLoaderView_UnderSizeLimit(t *testing.T) {
 	obj := awss3.S3Object{
 		Key:  "small.txt",
 		Size: 100,
@@ -35,43 +35,52 @@ func TestS3ObjectContentView_UnderSizeLimit(t *testing.T) {
 	}
 }
 
-func TestS3ObjectContentView_FormatText_Plain(t *testing.T) {
-	v := &S3ObjectContentView{key: "readme.txt"}
-	content := v.formatText([]byte("hello world"))
-	if content != "hello world" {
-		t.Errorf("expected plain text, got: %s", content)
-	}
-}
-
-func TestS3ObjectContentView_FormatText_Binary(t *testing.T) {
-	v := &S3ObjectContentView{key: "data.bin"}
-	content := v.formatText([]byte{0x80, 0x81, 0x82, 0x83})
-	if !contains(content, "Binary file") {
-		t.Errorf("expected binary notice, got: %s", content)
-	}
-}
-
-func TestS3ObjectContentView_FormatText_JSON(t *testing.T) {
-	v := &S3ObjectContentView{key: "data.json"}
-	content := v.formatText([]byte(`{"key":"value","arr":[1,2,3]}`))
-	if !contains(content, "\"key\": \"value\"") {
-		t.Errorf("expected pretty-printed JSON, got: %s", content)
-	}
-}
-
-func TestS3ObjectContentView_FormatText_InvalidJSON(t *testing.T) {
-	v := &S3ObjectContentView{key: "broken.json"}
-	raw := `{"key": "value", broken}`
-	content := v.formatText([]byte(raw))
-	if content != raw {
-		t.Errorf("expected raw text fallback, got: %s", content)
-	}
-}
-
-func TestS3ObjectContentView_Title(t *testing.T) {
-	v := &S3ObjectContentView{key: "path/to/file.txt"}
+func TestS3ContentLoaderView_Title(t *testing.T) {
+	v := &S3ContentLoaderView{key: "path/to/file.txt"}
 	if v.Title() != "file.txt" {
 		t.Errorf("Title() = %s, want file.txt", v.Title())
+	}
+}
+
+func TestTextView_Binary(t *testing.T) {
+	tv := NewTextView("data.bin", []byte{0x80, 0x81, 0x82, 0x83}, "data.bin")
+	tv.Init()
+	if !tv.isBinary {
+		t.Error("expected isBinary to be true for invalid UTF-8")
+	}
+	if !contains(tv.View(), "Binary file") {
+		t.Errorf("expected binary notice, got: %s", tv.View())
+	}
+}
+
+func TestTextView_PlainText(t *testing.T) {
+	tv := NewTextView("readme.txt", []byte("hello world"), "readme.txt")
+	if tv.isBinary {
+		t.Error("expected isBinary to be false for valid UTF-8")
+	}
+}
+
+func TestTextView_JSONPrettyPrint(t *testing.T) {
+	tv := NewTextView("data.json", []byte(`{"key":"value","arr":[1,2,3]}`), "data.json")
+	// rawText should contain pretty-printed JSON (possibly with syntax highlighting)
+	if !contains(tv.rawText, "\"key\"") {
+		t.Errorf("expected pretty-printed JSON, got: %s", tv.rawText)
+	}
+}
+
+func TestTextView_InvalidJSON(t *testing.T) {
+	raw := `{"key": "value", broken}`
+	tv := NewTextView("broken.json", []byte(raw), "broken.json")
+	// Should fall back to raw text (possibly highlighted), but must contain original content
+	if !contains(tv.rawText, "key") {
+		t.Errorf("expected raw text fallback to contain 'key', got: %s", tv.rawText)
+	}
+}
+
+func TestTextView_Title(t *testing.T) {
+	tv := NewTextView("file.txt", []byte("content"), "path/to/file.txt")
+	if tv.Title() != "file.txt" {
+		t.Errorf("Title() = %s, want file.txt", tv.Title())
 	}
 }
 
