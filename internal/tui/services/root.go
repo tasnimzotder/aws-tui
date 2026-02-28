@@ -26,6 +26,7 @@ func NewRootView(client *awsclient.ServiceClient) *RootView {
 		serviceItem{name: "EC2", desc: "Elastic Compute Cloud — Instances"},
 		serviceItem{name: "ECR", desc: "Elastic Container Registry — Repositories, Images"},
 		serviceItem{name: "ECS", desc: "Elastic Container Service — Clusters, Services, Tasks"},
+		serviceItem{name: "EKS", desc: "Elastic Kubernetes Service — Clusters, Pods, Services"},
 		serviceItem{name: "ELB", desc: "Elastic Load Balancing — Load Balancers, Listeners, Target Groups"},
 		serviceItem{name: "IAM", desc: "Identity & Access Management — Users, Roles, Policies"},
 		serviceItem{name: "S3", desc: "Simple Storage Service — Buckets, Objects"},
@@ -75,6 +76,10 @@ func (v *RootView) handleSelection(name string) tea.Cmd {
 	case "ECS":
 		return func() tea.Msg {
 			return PushViewMsg{View: NewECSClustersView(v.client)}
+		}
+	case "EKS":
+		return func() tea.Msg {
+			return PushViewMsg{View: NewEKSClustersView(v.client)}
 		}
 	case "VPC":
 		return func() tea.Msg {
