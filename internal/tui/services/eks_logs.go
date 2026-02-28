@@ -271,7 +271,7 @@ func NewContainerPickerView(k8s *awseks.K8sClient, pod K8sPod, action string) *C
 	l.Title = fmt.Sprintf("Select container (%s)", action)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
-	l.SetFilteringEnabled(true)
+	l.SetFilteringEnabled(false)
 
 	return &ContainerPickerView{
 		k8s:    k8s,
@@ -301,7 +301,7 @@ func (v *ContainerPickerView) Update(msg tea.Msg) (View, tea.Cmd) {
 			case "logs":
 				return v, pushView(NewEKSLogView(v.k8s, v.pod, container))
 			case "exec":
-				return v, execIntoPod(v.k8s, v.pod, container)
+				return v, pushView(newExecInputView(v.k8s, v.pod, container))
 			}
 			return v, nil
 		case "esc":

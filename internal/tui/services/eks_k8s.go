@@ -230,7 +230,7 @@ func newK8sPodsTableView(k8s *awseks.K8sClient, namespace string, pfManager *por
 			if len(p.Containers) > 1 {
 				return pushView(NewContainerPickerView(k8s, p, "exec"))
 			}
-			return execIntoPod(k8s, p, "")
+			return pushView(newExecInputView(k8s, p, ""))
 		},
 	}
 
@@ -243,6 +243,7 @@ func newK8sPodsTableView(k8s *awseks.K8sClient, namespace string, pfManager *por
 		}
 	}
 
+	podsHelp := HelpContextK8sPods
 	return NewTableView(TableViewConfig[K8sPod]{
 		Title:       "Pods",
 		LoadingText: "Loading pods...",
@@ -263,6 +264,7 @@ func newK8sPodsTableView(k8s *awseks.K8sClient, namespace string, pfManager *por
 		},
 		CopyIDFunc:  func(p K8sPod) string { return p.Namespace + "/" + p.Name },
 		KeyHandlers: keyHandlers,
+		HelpCtx:     &podsHelp,
 		OnEnter: func(p K8sPod) tea.Cmd {
 			return pushView(NewK8sPodDetailView(k8s, p))
 		},

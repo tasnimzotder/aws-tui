@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +15,8 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/portforward"
@@ -49,6 +53,7 @@ type k8sExecProcess struct {
 	k8s       *awseks.K8sClient
 	pod       K8sPod
 	container string
+	command   []string
 	stdin     io.Reader
 	stdout    io.Writer
 	stderr    io.Writer
@@ -61,6 +66,15 @@ func (p *k8sExecProcess) SetStderr(w io.Writer) { p.stderr = w }
 func (p *k8sExecProcess) Run() error {
 	config := p.k8s.Config
 
+	// Put local terminal in raw mode so escape sequences (arrow keys, tab,
+	// ctrl-*) pass through to the remote shell instead of being interpreted.
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return fmt.Errorf("setting terminal raw mode: %w", err)
+	}
+	defer term.Restore(fd, oldState)
+
 	req := p.k8s.Clientset.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(p.pod.Name).
@@ -68,7 +82,7 @@ func (p *k8sExecProcess) Run() error {
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
 			Container: p.container,
-			Command:   []string{"/bin/sh"},
+			Command:   p.command,
 			Stdin:     true,
 			Stdout:    true,
 			Stderr:    true,
@@ -80,17 +94,76 @@ func (p *k8sExecProcess) Run() error {
 		return fmt.Errorf("creating SPDY executor: %w", err)
 	}
 
+	// Set up terminal size queue with SIGWINCH handling for live resizes.
+	sizeQueue := newTerminalSizeQueue(fd)
+	defer sizeQueue.stop()
+
 	return exec.StreamWithContext(context.Background(), remotecommand.StreamOptions{
-		Stdin:  p.stdin,
-		Stdout: p.stdout,
-		Stderr: p.stderr,
-		Tty:    true,
+		Stdin:             p.stdin,
+		Stdout:            p.stdout,
+		Stderr:            p.stderr,
+		Tty:               true,
+		TerminalSizeQueue: sizeQueue,
 	})
 }
 
+// terminalSizeQueue sends the current terminal size, then listens for
+// SIGWINCH signals to send updated sizes on window resize.
+type terminalSizeQueue struct {
+	fd      int
+	sizeCh  chan remotecommand.TerminalSize
+	sigCh   chan os.Signal
+	stopCh  chan struct{}
+}
+
+func newTerminalSizeQueue(fd int) *terminalSizeQueue {
+	q := &terminalSizeQueue{
+		fd:     fd,
+		sizeCh: make(chan remotecommand.TerminalSize, 1),
+		sigCh:  make(chan os.Signal, 1),
+		stopCh: make(chan struct{}),
+	}
+
+	// Send initial size.
+	if w, h, err := term.GetSize(fd); err == nil {
+		q.sizeCh <- remotecommand.TerminalSize{Width: uint16(w), Height: uint16(h)}
+	}
+
+	// Listen for SIGWINCH (terminal resize).
+	signal.Notify(q.sigCh, unix.SIGWINCH)
+	go func() {
+		for {
+			select {
+			case <-q.sigCh:
+				if w, h, err := term.GetSize(fd); err == nil {
+					q.sizeCh <- remotecommand.TerminalSize{Width: uint16(w), Height: uint16(h)}
+				}
+			case <-q.stopCh:
+				return
+			}
+		}
+	}()
+
+	return q
+}
+
+func (q *terminalSizeQueue) Next() *remotecommand.TerminalSize {
+	select {
+	case size := <-q.sizeCh:
+		return &size
+	case <-q.stopCh:
+		return nil
+	}
+}
+
+func (q *terminalSizeQueue) stop() {
+	signal.Stop(q.sigCh)
+	close(q.stopCh)
+}
+
 // execIntoPod returns a tea.Cmd that suspends the TUI and runs an interactive
-// shell in the specified pod container.
-func execIntoPod(k8s *awseks.K8sClient, pod K8sPod, container string) tea.Cmd {
+// shell in the specified pod container with the given command.
+func execIntoPod(k8s *awseks.K8sClient, pod K8sPod, container string, command []string) tea.Cmd {
 	if container == "" && len(pod.Containers) == 1 {
 		container = pod.Containers[0]
 	}
@@ -98,10 +171,121 @@ func execIntoPod(k8s *awseks.K8sClient, pod K8sPod, container string) tea.Cmd {
 		k8s:       k8s,
 		pod:       pod,
 		container: container,
+		command:   command,
 	}
 	return tea.Exec(process, func(err error) tea.Msg {
 		return execDoneMsg{err: err}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Exec Input View — prompts for command before exec
+// ---------------------------------------------------------------------------
+
+type execInputView struct {
+	k8s       *awseks.K8sClient
+	pod       K8sPod
+	container string
+	input     textinput.Model
+}
+
+func newExecInputView(k8s *awseks.K8sClient, pod K8sPod, container string) *execInputView {
+	ti := textinput.New()
+	ti.SetValue("/bin/sh")
+	ti.CharLimit = 256
+	ti.Focus()
+
+	if container == "" && len(pod.Containers) == 1 {
+		container = pod.Containers[0]
+	}
+
+	return &execInputView{
+		k8s:       k8s,
+		pod:       pod,
+		container: container,
+		input:     ti,
+	}
+}
+
+func (v *execInputView) Title() string {
+	return fmt.Sprintf("Exec: %s", v.pod.Name)
+}
+
+func (v *execInputView) Init() tea.Cmd { return textinput.Blink }
+
+func (v *execInputView) Update(msg tea.Msg) (View, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "enter":
+			cmd := strings.TrimSpace(v.input.Value())
+			if cmd == "" {
+				return v, nil
+			}
+			return v, execIntoPod(v.k8s, v.pod, v.container, parseCommand(cmd))
+		case "esc":
+			return v, func() tea.Msg { return PopViewMsg{} }
+		}
+	case tea.WindowSizeMsg:
+		return v, nil
+	}
+
+	var cmd tea.Cmd
+	v.input, cmd = v.input.Update(msg)
+	return v, cmd
+}
+
+func (v *execInputView) View() string {
+	var b strings.Builder
+	bold := lipgloss.NewStyle().Bold(true)
+
+	b.WriteString(bold.Render(fmt.Sprintf("Exec into: %s/%s", v.pod.Namespace, v.pod.Name)))
+	if v.container != "" {
+		b.WriteString(bold.Render(fmt.Sprintf(" [%s]", v.container)))
+	}
+	b.WriteString("\n\n")
+	b.WriteString("Command:\n")
+	b.WriteString(v.input.View())
+	b.WriteString("\n\n")
+	b.WriteString(theme.MutedStyle.Render("Enter to exec  Esc to cancel"))
+	return b.String()
+}
+
+func (v *execInputView) SetSize(width, height int) {}
+func (v *execInputView) CapturesInput() bool        { return true }
+
+// parseCommand splits a command string into args, respecting quoted strings.
+func parseCommand(input string) []string {
+	var args []string
+	var current strings.Builder
+	inQuote := false
+	quoteChar := byte(0)
+
+	for i := 0; i < len(input); i++ {
+		c := input[i]
+		switch {
+		case inQuote:
+			if c == quoteChar {
+				inQuote = false
+			} else {
+				current.WriteByte(c)
+			}
+		case c == '"' || c == '\'':
+			inQuote = true
+			quoteChar = c
+		case c == ' ' || c == '\t':
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(c)
+		}
+	}
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+	return args
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +493,7 @@ func (v *portForwardInputView) View() string {
 }
 
 func (v *portForwardInputView) SetSize(width, height int) {}
+func (v *portForwardInputView) CapturesInput() bool        { return true }
 
 // parsePortSpec parses "localPort:remotePort" and returns the two port numbers.
 func parsePortSpec(spec string) (int, int, error) {

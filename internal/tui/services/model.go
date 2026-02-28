@@ -125,7 +125,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case execDoneMsg:
 		// After tea.Exec returns from an interactive shell (e.g. kubectl exec),
-		// force a full screen clear to remove any terminal artifacts.
+		// pop intermediate views (exec input, container picker) then clear screen.
+		for len(m.stack) > 1 {
+			top := m.stack[len(m.stack)-1]
+			if _, ok := top.(*execInputView); ok {
+				m.stack = m.stack[:len(m.stack)-1]
+				continue
+			}
+			if _, ok := top.(*ContainerPickerView); ok {
+				m.stack = m.stack[:len(m.stack)-1]
+				continue
+			}
+			break
+		}
 		return m, tea.ClearScreen
 	}
 
@@ -243,15 +255,23 @@ func (m Model) updateNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// If the current view captures keyboard input (e.g. text input views),
+	// delegate all keys except ctrl+c directly to avoid intercepting them.
+	if m.currentViewCapturesInput() && msg.String() != "ctrl+c" {
+		if len(m.stack) > 0 {
+			current := m.stack[len(m.stack)-1]
+			updated, cmd := current.Update(msg)
+			m.stack[len(m.stack)-1] = updated
+			return m, cmd
+		}
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "q":
-		if len(m.stack) <= 1 {
-			m.confirmQuit = true
-			return m, nil
-		}
-		return m, tea.Quit
+		m.confirmQuit = true
+		return m, nil
 	case "esc":
 		if len(m.stack) > 1 {
 			m.stack = m.stack[:len(m.stack)-1]
@@ -316,6 +336,22 @@ func (m Model) currentCopyable() (CopyableView, bool) {
 	}
 	cv, ok := m.stack[len(m.stack)-1].(CopyableView)
 	return cv, ok
+}
+
+// InputCapturingView is implemented by views that have a focused text input
+// and need to receive all key events (backspace, letters, etc.) directly.
+type InputCapturingView interface {
+	CapturesInput() bool
+}
+
+func (m Model) currentViewCapturesInput() bool {
+	if len(m.stack) == 0 {
+		return false
+	}
+	if ic, ok := m.stack[len(m.stack)-1].(InputCapturingView); ok {
+		return ic.CapturesInput()
+	}
+	return false
 }
 
 func (m Model) applyFilter(fv FilterableView) {

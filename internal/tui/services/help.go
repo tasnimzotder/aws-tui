@@ -17,6 +17,9 @@ const (
 	HelpContextDetail
 	HelpContextS3Objects
 	HelpContextTextView
+	HelpContextEKSDetail
+	HelpContextK8sPods
+	HelpContextK8sLogs
 )
 
 type helpBinding struct {
@@ -96,6 +99,51 @@ func renderHelp(ctx HelpContext, width, height int) string {
 			{"?", "Toggle this help"},
 			{"q", "Quit"},
 		}
+	case HelpContextEKSDetail:
+		title = "Keybindings — EKS Cluster"
+		bindings = []helpBinding{
+			{"Tab", "Next tab"},
+			{"Shift+Tab", "Prev tab"},
+			{"1-7", "Jump to tab"},
+			{"N", "Change namespace (K8s tabs)"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"C", "Copy ARN"},
+			{"j/k", "Navigate up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
+	case HelpContextK8sPods:
+		title = "Keybindings — K8s Pods"
+		bindings = []helpBinding{
+			{"Enter", "Pod details"},
+			{"x", "Exec into pod (prompts cmd)"},
+			{"l", "View pod logs"},
+			{"f", "Port forward"},
+			{"F", "List port forwards"},
+			{"/", "Filter rows"},
+			{"n/p", "Next/prev page"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"j/k", "Navigate up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
+	case HelpContextK8sLogs:
+		title = "Keybindings — Pod Logs"
+		bindings = []helpBinding{
+			{"f", "Toggle follow"},
+			{"w", "Toggle word wrap"},
+			{"/", "Search"},
+			{"n", "Next match"},
+			{"N", "Prev match"},
+			{"j/k", "Scroll up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
 	}
 
 	var b strings.Builder
@@ -128,7 +176,9 @@ func detectHelpContext(v View) HelpContext {
 	case *TaskDetailView:
 		return HelpContextDetail
 	case *EKSClusterDetailView:
-		return HelpContextDetail
+		return HelpContextEKSDetail
+	case *EKSLogView:
+		return HelpContextK8sLogs
 	case *RootView:
 		return HelpContextRoot
 	case *VPCDetailView:
