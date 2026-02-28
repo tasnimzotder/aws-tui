@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 const (
@@ -74,33 +74,52 @@ func (tp *TokenProvider) GetToken() (string, error) {
 
 // generateToken creates a presigned STS GetCallerIdentity URL and encodes it
 // as an EKS bearer token. This implements the same mechanism as `aws eks get-token`.
+//
+// Uses a custom presigner to inject headers directly into the HTTP request
+// before signing, working around aws-sdk-go-v2#1922 where smithyhttp.AddHeaderValue
+// doesn't produce valid signatures for EKS token auth.
 func generateToken(cfg aws.Config, clusterName string) (string, time.Time, error) {
 	stsClient := sts.NewFromConfig(cfg)
+	presignClient := sts.NewPresignClient(stsClient)
 
-	presignClient := sts.NewPresignClient(stsClient, func(po *sts.PresignOptions) {
-		po.ClientOptions = append(po.ClientOptions, func(o *sts.Options) {
-			o.APIOptions = append(o.APIOptions,
-				// Add the x-k8s-aws-id header (hoisted to query param during presigning).
-				smithyhttp.AddHeaderValue(clusterIDHeader, clusterName),
-				// Set the presigned URL expiry to 60 seconds.
-				smithyhttp.SetHeaderValue("X-Amz-Expires", presignURLExpiry),
-			)
-		})
-	})
+	headers := map[string]string{
+		clusterIDHeader: clusterName,
+		"X-Amz-Expires": presignURLExpiry,
+	}
 
 	ctx := context.Background()
-	presigned, err := presignClient.PresignGetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	presigned, err := presignClient.PresignGetCallerIdentity(ctx, &sts.GetCallerIdentityInput{},
+		func(po *sts.PresignOptions) {
+			po.Presigner = &eksPresigner{base: po.Presigner, headers: headers}
+		},
+	)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("presigning GetCallerIdentity: %w", err)
 	}
 
-	// Encode the presigned URL as base64url without padding.
 	encoded := base64.RawURLEncoding.EncodeToString([]byte(presigned.URL))
-
 	token := tokenPrefix + encoded
 	expiry := time.Now().Add(tokenExpiry)
 
 	return token, expiry, nil
+}
+
+// eksPresigner wraps sts.HTTPPresignerV4 to inject custom headers (x-k8s-aws-id,
+// X-Amz-Expires) into the HTTP request before signature computation.
+type eksPresigner struct {
+	base    sts.HTTPPresignerV4
+	headers map[string]string
+}
+
+func (p *eksPresigner) PresignHTTP(
+	ctx context.Context, credentials aws.Credentials, r *http.Request,
+	payloadHash string, service string, region string, signingTime time.Time,
+	optFns ...func(*v4.SignerOptions),
+) (string, http.Header, error) {
+	for k, v := range p.headers {
+		r.Header.Set(k, v)
+	}
+	return p.base.PresignHTTP(ctx, credentials, r, payloadHash, service, region, signingTime, optFns...)
 }
 
 // WrapTransport returns a function that wraps an http.RoundTripper to inject

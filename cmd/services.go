@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	"tasnim.dev/aws-tui/internal/config"
@@ -21,6 +23,10 @@ func NewServicesCmd() *cobra.Command {
 		Use:   "services",
 		Short: "Browse AWS services (EC2, ECS, VPC, ECR)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Suppress klog stderr output from k8s client-go to prevent TUI corruption.
+			klog.SetOutput(io.Discard)
+			klog.LogToStderr(false)
+
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)

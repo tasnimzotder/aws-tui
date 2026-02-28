@@ -37,6 +37,9 @@ type Model struct {
 
 	// Help overlay
 	showHelp bool
+
+	// Quit confirmation
+	confirmQuit bool
 }
 
 // NewModel creates a new services browser model.
@@ -119,6 +122,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stack = m.stack[:len(m.stack)-1]
 		}
 		return m, nil
+
+	case execDoneMsg:
+		// After tea.Exec returns from an interactive shell (e.g. kubectl exec),
+		// force a full screen clear to remove any terminal artifacts.
+		return m, tea.ClearScreen
 	}
 
 	// Delegate to current view
@@ -169,7 +177,9 @@ func (m Model) View() tea.View {
 
 	// Help / copy status
 	var help string
-	if m.copiedText != "" {
+	if m.confirmQuit {
+		help = lipgloss.NewStyle().Foreground(theme.Warning).Bold(true).Render("Quit? (y/n)")
+	} else if m.copiedText != "" {
 		help = theme.CopiedStyle.Render(fmt.Sprintf("Copied: %s", m.copiedText))
 	} else if m.filtering {
 		help = theme.HelpStyle.Render("Enter to lock filter • Esc to clear")
@@ -222,15 +232,33 @@ func (m Model) updateFilterMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Handle quit confirmation state
+	if m.confirmQuit {
+		switch msg.String() {
+		case "y", "Y", "enter":
+			return m, tea.Quit
+		default:
+			m.confirmQuit = false
+			return m, nil
+		}
+	}
+
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "ctrl+c":
+		return m, tea.Quit
+	case "q":
+		if len(m.stack) <= 1 {
+			m.confirmQuit = true
+			return m, nil
+		}
 		return m, tea.Quit
 	case "esc":
 		if len(m.stack) > 1 {
 			m.stack = m.stack[:len(m.stack)-1]
 			return m, nil
 		}
-		return m, tea.Quit
+		m.confirmQuit = true
+		return m, nil
 	case "backspace":
 		if len(m.stack) > 1 {
 			m.stack = m.stack[:len(m.stack)-1]
