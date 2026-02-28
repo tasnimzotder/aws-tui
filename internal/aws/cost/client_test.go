@@ -62,6 +62,7 @@ func TestFetchCostData_AggregatesCorrectly(t *testing.T) {
 	}
 
 	client := NewClientWithAPI(mock)
+	client.now = func() time.Time { return time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC) }
 	data, err := client.FetchCostData(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -123,6 +124,7 @@ func TestFetchCostData_SortsServicesByDescendingCost(t *testing.T) {
 	}
 
 	client := NewClientWithAPI(mock)
+	client.now = func() time.Time { return time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC) }
 	data, err := client.FetchCostData(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

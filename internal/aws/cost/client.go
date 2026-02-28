@@ -20,17 +20,18 @@ type CostExplorerAPI interface {
 
 // Client wraps the AWS Cost Explorer API.
 type Client struct {
-	ce CostExplorerAPI
+	ce  CostExplorerAPI
+	now func() time.Time // injectable for testing; defaults to time.Now
 }
 
 // NewClient creates a new Cost Explorer client from an AWS config.
 func NewClient(cfg aws.Config) *Client {
-	return &Client{ce: costexplorer.NewFromConfig(cfg)}
+	return &Client{ce: costexplorer.NewFromConfig(cfg), now: time.Now}
 }
 
 // NewClientWithAPI creates a client with a custom API implementation (for testing).
 func NewClientWithAPI(api CostExplorerAPI) *Client {
-	return &Client{ce: api}
+	return &Client{ce: api, now: time.Now}
 }
 
 type usageResult struct {
@@ -153,7 +154,7 @@ func extractMoMSpend(lastMonthRes usageResult, mtdSpend float64) (lastMonthMTDSp
 
 // FetchCostData retrieves cost and forecast data from AWS Cost Explorer.
 func (c *Client) FetchCostData(ctx context.Context) (*CostData, error) {
-	dr := computeDateRange(time.Now())
+	dr := computeDateRange(c.now())
 
 	// Launch API calls concurrently
 	usageCh := make(chan usageResult, 1)
