@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 
@@ -35,75 +34,9 @@ func NewVPCListView(client *awsclient.ServiceClient) *TableView[awsvpc.VPCInfo] 
 		},
 		CopyIDFunc: func(vpc awsvpc.VPCInfo) string { return vpc.VPCID },
 		OnEnter: func(vpc awsvpc.VPCInfo) tea.Cmd {
-			return pushView(NewVPCSubMenuView(client, vpc.VPCID, vpc.Name))
+			return pushView(NewVPCDetailView(client, vpc))
 		},
 	})
-}
-
-// --- VPC Sub-Menu View (Subnets / SGs / IGWs) ---
-
-type vpcSubMenuItem struct {
-	name string
-	desc string
-}
-
-func (i vpcSubMenuItem) Title() string       { return i.name }
-func (i vpcSubMenuItem) Description() string { return i.desc }
-func (i vpcSubMenuItem) FilterValue() string { return i.name }
-
-type VPCSubMenuView struct {
-	client  *awsclient.ServiceClient
-	vpcID   string
-	vpcName string
-	list    list.Model
-}
-
-func NewVPCSubMenuView(client *awsclient.ServiceClient, vpcID, vpcName string) *VPCSubMenuView {
-	title := vpcName
-	if title == "" {
-		title = vpcID
-	}
-	items := []list.Item{
-		vpcSubMenuItem{name: "Subnets", desc: "View subnets in this VPC"},
-		vpcSubMenuItem{name: "Security Groups", desc: "View security groups in this VPC"},
-		vpcSubMenuItem{name: "Internet Gateways", desc: "View internet gateways attached to this VPC"},
-	}
-	l := list.New(items, list.NewDefaultDelegate(), 60, 10)
-	l.SetShowTitle(false)
-	l.SetShowStatusBar(false)
-	l.SetShowHelp(false)
-	l.SetFilteringEnabled(false)
-
-	return &VPCSubMenuView{client: client, vpcID: vpcID, vpcName: title, list: l}
-}
-
-func (v *VPCSubMenuView) Title() string { return v.vpcName }
-func (v *VPCSubMenuView) Init() tea.Cmd { return nil }
-func (v *VPCSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == "enter" {
-			selected, ok := v.list.SelectedItem().(vpcSubMenuItem)
-			if !ok {
-				return v, nil
-			}
-			switch selected.name {
-			case "Subnets":
-				return v, pushView(NewSubnetsView(v.client, v.vpcID))
-			case "Security Groups":
-				return v, pushView(NewSecurityGroupsView(v.client, v.vpcID))
-			case "Internet Gateways":
-				return v, pushView(NewIGWView(v.client, v.vpcID))
-			}
-		}
-	}
-	var cmd tea.Cmd
-	v.list, cmd = v.list.Update(msg)
-	return v, cmd
-}
-func (v *VPCSubMenuView) View() string { return v.list.View() }
-func (v *VPCSubMenuView) SetSize(width, height int) {
-	v.list.SetSize(width, height)
 }
 
 // --- Subnets View ---
@@ -149,6 +82,9 @@ func NewSecurityGroupsView(client *awsclient.ServiceClient, vpcID string) *Table
 			return table.Row{sg.GroupID, sg.Name, sg.Description, fmt.Sprintf("%d", sg.InboundRules), fmt.Sprintf("%d", sg.OutboundRules)}
 		},
 		CopyIDFunc: func(sg awsvpc.SecurityGroupInfo) string { return sg.GroupID },
+		OnEnter: func(sg awsvpc.SecurityGroupInfo) tea.Cmd {
+			return pushView(NewSecurityGroupDetailView(client, sg))
+		},
 	})
 }
 

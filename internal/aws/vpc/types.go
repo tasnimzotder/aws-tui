@@ -29,3 +29,41 @@ type InternetGatewayInfo struct {
 	Name      string
 	State     string
 }
+
+type RouteTableInfo struct {
+	RouteTableID string
+	Name         string
+	IsMain       bool
+	Routes       []RouteEntry
+	Associations []RouteTableAssociation
+}
+
+type RouteEntry struct {
+	Destination string // CIDR or prefix list
+	Target      string // igw-xxx, nat-xxx, local, etc.
+	Status      string // active, blackhole
+	Origin      string // CreateRouteTable, CreateRoute, EnableVgwRoutePropagation
+}
+
+type RouteTableAssociation struct {
+	SubnetID string
+	IsMain   bool
+}
+
+type NATGatewayInfo struct {
+	GatewayID string
+	Name      string
+	State     string // available, pending, failed, deleting, deleted
+	Type      string // public, private
+	SubnetID  string
+	ElasticIP string
+	PrivateIP string
+}
+
+type SecurityGroupRule struct {
+	Direction   string // "inbound" or "outbound"
+	Protocol    string // tcp, udp, icmp, all, or number
+	PortRange   string // "80", "80-443", "All"
+	Source      string // CIDR, security group ID, or prefix list (for inbound)
+	Description string
+}

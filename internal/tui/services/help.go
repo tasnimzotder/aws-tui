@@ -127,10 +127,12 @@ func detectHelpContext(v View) HelpContext {
 		return HelpContextTextView
 	case *TaskDetailView:
 		return HelpContextDetail
+	case *EKSClusterDetailView:
+		return HelpContextDetail
 	case *RootView:
 		return HelpContextRoot
-	case *VPCSubMenuView:
-		return HelpContextRoot
+	case *VPCDetailView:
+		return HelpContextDetail
 	case *ECSServiceSubMenuView:
 		return HelpContextRoot
 	case *IAMSubMenuView:
