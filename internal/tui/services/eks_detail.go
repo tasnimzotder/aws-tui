@@ -109,6 +109,7 @@ func (v *EKSClusterDetailView) connectK8s() tea.Cmd {
 		if err != nil {
 			return eksK8sErrorMsg{err: err}
 		}
+		k8sClient.ClusterName = cluster.Name
 
 		ctx := context.Background()
 		nodes, err := k8sClient.Clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})

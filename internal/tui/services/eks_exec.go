@@ -66,6 +66,9 @@ func (p *k8sExecProcess) SetStderr(w io.Writer) { p.stderr = w }
 func (p *k8sExecProcess) Run() error {
 	config := p.k8s.Config
 
+	// Print exec header before entering raw mode.
+	p.printExecHeader()
+
 	// Put local terminal in raw mode so escape sequences (arrow keys, tab,
 	// ctrl-*) pass through to the remote shell instead of being interpreted.
 	fd := int(os.Stdin.Fd())
@@ -159,6 +162,50 @@ func (q *terminalSizeQueue) Next() *remotecommand.TerminalSize {
 func (q *terminalSizeQueue) stop() {
 	signal.Stop(q.sigCh)
 	close(q.stopCh)
+}
+
+// printExecHeader prints a styled header to stdout before the exec session.
+func (p *k8sExecProcess) printExecHeader() {
+	w, _, _ := term.GetSize(int(os.Stdout.Fd()))
+	if w <= 0 {
+		w = 80
+	}
+
+	cluster := p.k8s.ClusterName
+	if cluster == "" {
+		cluster = "unknown"
+	}
+	container := p.container
+	if container == "" {
+		container = "-"
+	}
+	cmd := strings.Join(p.command, " ")
+
+	// Build info line
+	info := fmt.Sprintf(" %s/%s  container: %s  cmd: %s",
+		p.pod.Namespace, p.pod.Name, container, cmd)
+
+	// Header bar
+	label := fmt.Sprintf(" exec  %s ", cluster)
+	labelStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#1a1a2e")).
+		Background(lipgloss.Color("#33A8FF"))
+	infoStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#33A8FF"))
+	divStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6B7280"))
+
+	header := labelStyle.Render(label)
+	headerInfo := infoStyle.Render(info)
+
+	// Divider line
+	divider := divStyle.Render(strings.Repeat("─", w))
+
+	fmt.Fprintf(p.stdout, "%s%s\n%s\n", header, headerInfo, divider)
+
+	// Set terminal title via OSC escape.
+	fmt.Fprintf(p.stdout, "\033]0;exec %s/%s [%s]\007", p.pod.Namespace, p.pod.Name, cluster)
 }
 
 // execIntoPod returns a tea.Cmd that suspends the TUI and runs an interactive

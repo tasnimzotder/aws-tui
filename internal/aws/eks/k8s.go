@@ -10,9 +10,10 @@ import (
 
 // K8sClient wraps a kubernetes.Clientset with token refresh support.
 type K8sClient struct {
-	Clientset *kubernetes.Clientset
-	Token     *TokenProvider
-	Config    *rest.Config
+	Clientset   *kubernetes.Clientset
+	Token       *TokenProvider
+	Config      *rest.Config
+	ClusterName string
 }
 
 // NewK8sClient creates a K8s client from EKS cluster details.
