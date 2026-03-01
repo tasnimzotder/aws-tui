@@ -23,11 +23,14 @@ import (
 
 // vpcCountsMsg carries resource counts fetched in the background.
 type vpcCountsMsg struct {
-	subnets int
-	sgs     int
-	rts     int
-	igws    int
-	nats    int
+	subnets   int
+	sgs       int
+	rts       int
+	igws      int
+	nats      int
+	endpoints int
+	peerings  int
+	nacls     int
 }
 
 // VPCDetailView shows a dashboard with VPC info and resource counts, plus a
@@ -37,12 +40,15 @@ type VPCDetailView struct {
 	vpc    awsvpc.VPCInfo
 
 	// Dashboard counts
-	subnetCount  int
-	sgCount      int
-	rtCount      int
-	igwCount     int
-	natCount     int
-	countsLoaded bool
+	subnetCount   int
+	sgCount       int
+	rtCount       int
+	igwCount      int
+	natCount      int
+	endpointCount int
+	peeringCount  int
+	naclCount     int
+	countsLoaded  bool
 
 	// Tabs
 	activeTab int
@@ -63,8 +69,9 @@ func NewVPCDetailView(client *awsclient.ServiceClient, vpc awsvpc.VPCInfo) *VPCD
 		vpc:    vpc,
 		tabNames: []string{
 			"Subnets", "Security Groups", "Route Tables", "Internet Gateways", "NAT Gateways",
+			"Endpoints", "Peering", "NACLs", "Flow Logs", "Tags",
 		},
-		tabViews: make([]View, 5),
+		tabViews: make([]View, 10),
 		loading:  true,
 		spinner:  theme.NewSpinner(),
 	}
@@ -87,7 +94,7 @@ func (v *VPCDetailView) fetchCounts() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		var wg sync.WaitGroup
-		var subnets, sgs, rts, igws, nats int
+		var subnets, sgs, rts, igws, nats, endpoints, peerings, nacls int
 		var mu sync.Mutex
 
 		fetch := func(fn func()) {
@@ -138,9 +145,34 @@ func (v *VPCDetailView) fetchCounts() tea.Cmd {
 				mu.Unlock()
 			}
 		})
+		fetch(func() {
+			items, err := client.VPC.ListVPCEndpoints(ctx, vpcID)
+			if err == nil {
+				mu.Lock()
+				endpoints = len(items)
+				mu.Unlock()
+			}
+		})
+		fetch(func() {
+			items, err := client.VPC.ListVPCPeering(ctx, vpcID)
+			if err == nil {
+				mu.Lock()
+				peerings = len(items)
+				mu.Unlock()
+			}
+		})
+		fetch(func() {
+			items, err := client.VPC.ListNetworkACLs(ctx, vpcID)
+			if err == nil {
+				mu.Lock()
+				nacls = len(items)
+				mu.Unlock()
+			}
+		})
 
 		wg.Wait()
-		return vpcCountsMsg{subnets: subnets, sgs: sgs, rts: rts, igws: igws, nats: nats}
+		return vpcCountsMsg{subnets: subnets, sgs: sgs, rts: rts, igws: igws, nats: nats,
+			endpoints: endpoints, peerings: peerings, nacls: nacls}
 	}
 }
 
@@ -152,6 +184,9 @@ func (v *VPCDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.rtCount = msg.rts
 		v.igwCount = msg.igws
 		v.natCount = msg.nats
+		v.endpointCount = msg.endpoints
+		v.peeringCount = msg.peerings
+		v.naclCount = msg.nacls
 		v.countsLoaded = true
 		v.loading = false
 		// Initialize first tab
@@ -182,6 +217,16 @@ func (v *VPCDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 			return v, v.switchTab(3)
 		case "5":
 			return v, v.switchTab(4)
+		case "6":
+			return v, v.switchTab(5)
+		case "7":
+			return v, v.switchTab(6)
+		case "8":
+			return v, v.switchTab(7)
+		case "9":
+			return v, v.switchTab(8)
+		case "0":
+			return v, v.switchTab(9)
 		default:
 			// Delegate to active tab view
 			if v.tabViews[v.activeTab] != nil {
@@ -248,6 +293,16 @@ func (v *VPCDetailView) initTab(idx int) {
 		v.tabViews[idx] = NewIGWView(v.client, v.vpc.VPCID)
 	case 4:
 		v.tabViews[idx] = NewNATGatewaysView(v.client, v.vpc.VPCID)
+	case 5:
+		v.tabViews[idx] = NewVPCEndpointsView(v.client, v.vpc.VPCID)
+	case 6:
+		v.tabViews[idx] = NewVPCPeeringView(v.client, v.vpc.VPCID)
+	case 7:
+		v.tabViews[idx] = NewNACLsView(v.client, v.vpc.VPCID)
+	case 8:
+		v.tabViews[idx] = NewFlowLogsView(v.client, v.vpc.VPCID)
+	case 9:
+		v.tabViews[idx] = NewVPCTagsView(v.client, v.vpc.VPCID)
 	}
 }
 
@@ -306,7 +361,8 @@ func (v *VPCDetailView) renderDashboard() string {
 	if v.countsLoaded {
 		line2 = fmt.Sprintf("Subnets: %d   SGs: %d   Route Tables: %d   IGWs: %d",
 			v.subnetCount, v.sgCount, v.rtCount, v.igwCount)
-		line2 += fmt.Sprintf("\nNAT Gateways: %d", v.natCount)
+		line2 += fmt.Sprintf("\nNAT Gateways: %d   Endpoints: %d   Peering: %d   NACLs: %d",
+			v.natCount, v.endpointCount, v.peeringCount, v.naclCount)
 	} else {
 		line2 = "Loading resource counts..."
 	}
@@ -335,7 +391,11 @@ func (v *VPCDetailView) renderDashboard() string {
 func (v *VPCDetailView) renderTabBar() string {
 	var tabs []string
 	for i, name := range v.tabNames {
-		label := fmt.Sprintf("%d:%s", i+1, name)
+		key := fmt.Sprintf("%d", i+1)
+		if i == 9 {
+			key = "0"
+		}
+		label := key + ":" + name
 		if i == v.activeTab {
 			tabs = append(tabs, theme.TabActiveStyle.Render(label))
 		} else {
@@ -742,6 +802,200 @@ func (v *SecurityGroupDetailView) View() string {
 }
 
 func (v *SecurityGroupDetailView) SetSize(width, height int) {
+	v.width = width
+	v.height = height
+	if v.vpReady {
+		v.viewport.SetWidth(width)
+		h := height - 2
+		if h < 1 {
+			h = 1
+		}
+		v.viewport.SetHeight(h)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// NACL Entries View (sub-view when drilling into a NACL)
+// ---------------------------------------------------------------------------
+
+// naclEntriesMsg carries fetched NACL entries.
+type naclEntriesMsg struct {
+	entries []awsvpc.NetworkACLEntry
+}
+
+// naclEntriesErrMsg signals an error fetching NACL entries.
+type naclEntriesErrMsg struct {
+	err error
+}
+
+// NACLEntriesView shows inbound and outbound entries for a Network ACL.
+type NACLEntriesView struct {
+	client        *awsclient.ServiceClient
+	naclID        string
+	title         string
+	entries       []awsvpc.NetworkACLEntry
+	loaded        bool
+	err           error
+	viewport      viewport.Model
+	vpReady       bool
+	spinner       spinner.Model
+	width, height int
+}
+
+func NewNACLEntriesView(client *awsclient.ServiceClient, naclID, title string) *NACLEntriesView {
+	return &NACLEntriesView{
+		client:  client,
+		naclID:  naclID,
+		title:   title,
+		spinner: theme.NewSpinner(),
+	}
+}
+
+func (v *NACLEntriesView) Title() string { return "NACL: " + v.title }
+
+func (v *NACLEntriesView) Init() tea.Cmd {
+	return tea.Batch(v.spinner.Tick, v.fetchEntries())
+}
+
+func (v *NACLEntriesView) fetchEntries() tea.Cmd {
+	client := v.client
+	naclID := v.naclID
+	return func() tea.Msg {
+		entries, err := client.VPC.ListNetworkACLEntries(context.Background(), naclID)
+		if err != nil {
+			return naclEntriesErrMsg{err: err}
+		}
+		return naclEntriesMsg{entries: entries}
+	}
+}
+
+func (v *NACLEntriesView) Update(msg tea.Msg) (View, tea.Cmd) {
+	switch msg := msg.(type) {
+	case naclEntriesMsg:
+		v.entries = msg.entries
+		v.loaded = true
+		v.initViewport()
+		return v, nil
+
+	case naclEntriesErrMsg:
+		v.err = msg.err
+		v.loaded = true
+		v.initViewport()
+		return v, nil
+
+	case tea.WindowSizeMsg:
+		v.width = msg.Width
+		v.height = msg.Height
+		if v.vpReady {
+			v.viewport.SetWidth(v.width)
+			h := v.height - 2
+			if h < 1 {
+				h = 1
+			}
+			v.viewport.SetHeight(h)
+		}
+		return v, nil
+
+	case spinner.TickMsg:
+		if !v.loaded {
+			var cmd tea.Cmd
+			v.spinner, cmd = v.spinner.Update(msg)
+			return v, cmd
+		}
+	}
+
+	if v.vpReady {
+		var cmd tea.Cmd
+		v.viewport, cmd = v.viewport.Update(msg)
+		return v, cmd
+	}
+	return v, nil
+}
+
+func (v *NACLEntriesView) initViewport() {
+	h := v.height - 2
+	if h < 1 {
+		h = 1
+	}
+	w := v.width
+	if w < 20 {
+		w = 80
+	}
+	vp := viewport.New(
+		viewport.WithWidth(w),
+		viewport.WithHeight(h),
+	)
+	vp.MouseWheelEnabled = true
+	vp.SoftWrap = true
+	vp.Style = lipgloss.NewStyle().Padding(0, 1)
+	vp.SetContent(v.renderContent())
+	v.viewport = vp
+	v.vpReady = true
+}
+
+func (v *NACLEntriesView) renderContent() string {
+	var b strings.Builder
+	bold := lipgloss.NewStyle().Bold(true)
+
+	b.WriteString(bold.Render("Network ACL: " + v.title))
+	b.WriteString("\n")
+	b.WriteString(strings.Repeat("─", 80))
+	b.WriteString("\n")
+
+	if v.err != nil {
+		fmt.Fprintf(&b, "\nError loading entries: %s\n", v.err.Error())
+		return b.String()
+	}
+
+	// Separate inbound and outbound
+	var inbound, outbound []awsvpc.NetworkACLEntry
+	for _, e := range v.entries {
+		if e.Direction == "inbound" {
+			inbound = append(inbound, e)
+		} else {
+			outbound = append(outbound, e)
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(bold.Render("Inbound Rules:"))
+	b.WriteString("\n")
+	if len(inbound) == 0 {
+		b.WriteString("  (none)\n")
+	} else {
+		fmt.Fprintf(&b, "  %-8s %-10s %-12s %-20s %s\n", "RULE#", "PROTOCOL", "PORT", "CIDR", "ACTION")
+		for _, e := range inbound {
+			fmt.Fprintf(&b, "  %-8d %-10s %-12s %-20s %s\n", e.RuleNumber, e.Protocol, e.PortRange, e.CIDRBlock, e.Action)
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(bold.Render("Outbound Rules:"))
+	b.WriteString("\n")
+	if len(outbound) == 0 {
+		b.WriteString("  (none)\n")
+	} else {
+		fmt.Fprintf(&b, "  %-8s %-10s %-12s %-20s %s\n", "RULE#", "PROTOCOL", "PORT", "CIDR", "ACTION")
+		for _, e := range outbound {
+			fmt.Fprintf(&b, "  %-8d %-10s %-12s %-20s %s\n", e.RuleNumber, e.Protocol, e.PortRange, e.CIDRBlock, e.Action)
+		}
+	}
+
+	return b.String()
+}
+
+func (v *NACLEntriesView) View() string {
+	if !v.loaded {
+		return v.spinner.View() + " Loading NACL entries..."
+	}
+	if !v.vpReady {
+		return ""
+	}
+	status := theme.MutedStyle.Render("  Esc back  ↑/↓ scroll")
+	return v.viewport.View() + "\n" + status
+}
+
+func (v *NACLEntriesView) SetSize(width, height int) {
 	v.width = width
 	v.height = height
 	if v.vpReady {

@@ -18,6 +18,10 @@ type VPCAPI interface {
 	DescribeRouteTables(ctx context.Context, params *awsec2.DescribeRouteTablesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeRouteTablesOutput, error)
 	DescribeNatGateways(ctx context.Context, params *awsec2.DescribeNatGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNatGatewaysOutput, error)
 	DescribeSecurityGroupRules(ctx context.Context, params *awsec2.DescribeSecurityGroupRulesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupRulesOutput, error)
+	DescribeVpcEndpoints(ctx context.Context, params *awsec2.DescribeVpcEndpointsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcEndpointsOutput, error)
+	DescribeVpcPeeringConnections(ctx context.Context, params *awsec2.DescribeVpcPeeringConnectionsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcPeeringConnectionsOutput, error)
+	DescribeNetworkAcls(ctx context.Context, params *awsec2.DescribeNetworkAclsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNetworkAclsOutput, error)
+	DescribeFlowLogs(ctx context.Context, params *awsec2.DescribeFlowLogsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeFlowLogsOutput, error)
 }
 
 type Client struct {
@@ -359,4 +363,275 @@ func (c *Client) ListSecurityGroupRules(ctx context.Context, groupID string) ([]
 		nextToken = out.NextToken
 	}
 	return rules, nil
+}
+
+func (c *Client) ListVPCEndpoints(ctx context.Context, vpcID string) ([]VPCEndpointInfo, error) {
+	var endpoints []VPCEndpointInfo
+	var nextToken *string
+
+	for {
+		out, err := c.api.DescribeVpcEndpoints(ctx, &awsec2.DescribeVpcEndpointsInput{
+			Filters: []types.Filter{
+				{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+			},
+			NextToken: nextToken,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("DescribeVpcEndpoints: %w", err)
+		}
+
+		for _, ep := range out.VpcEndpoints {
+			var subnetIDs []string
+			for _, sn := range ep.SubnetIds {
+				subnetIDs = append(subnetIDs, sn)
+			}
+			var rtIDs []string
+			for _, rt := range ep.RouteTableIds {
+				rtIDs = append(rtIDs, rt)
+			}
+			endpoints = append(endpoints, VPCEndpointInfo{
+				EndpointID:    aws.ToString(ep.VpcEndpointId),
+				ServiceName:   aws.ToString(ep.ServiceName),
+				Type:          string(ep.VpcEndpointType),
+				State:         string(ep.State),
+				SubnetIDs:     subnetIDs,
+				RouteTableIDs: rtIDs,
+			})
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
+	}
+	return endpoints, nil
+}
+
+func (c *Client) ListVPCPeering(ctx context.Context, vpcID string) ([]VPCPeeringInfo, error) {
+	var peerings []VPCPeeringInfo
+	var nextToken *string
+
+	for {
+		out, err := c.api.DescribeVpcPeeringConnections(ctx, &awsec2.DescribeVpcPeeringConnectionsInput{
+			Filters: []types.Filter{
+				{Name: aws.String("requester-vpc-info.vpc-id"), Values: []string{vpcID}},
+			},
+			NextToken: nextToken,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("DescribeVpcPeeringConnections (requester): %w", err)
+		}
+
+		for _, pcx := range out.VpcPeeringConnections {
+			peerings = append(peerings, vpcPeeringFromSDK(pcx))
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
+	}
+
+	// Also fetch where this VPC is the accepter
+	nextToken = nil
+	for {
+		out, err := c.api.DescribeVpcPeeringConnections(ctx, &awsec2.DescribeVpcPeeringConnectionsInput{
+			Filters: []types.Filter{
+				{Name: aws.String("accepter-vpc-info.vpc-id"), Values: []string{vpcID}},
+			},
+			NextToken: nextToken,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("DescribeVpcPeeringConnections (accepter): %w", err)
+		}
+
+		for _, pcx := range out.VpcPeeringConnections {
+			// Deduplicate: skip if already seen from requester query
+			dup := false
+			id := aws.ToString(pcx.VpcPeeringConnectionId)
+			for _, existing := range peerings {
+				if existing.PeeringID == id {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				peerings = append(peerings, vpcPeeringFromSDK(pcx))
+			}
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
+	}
+
+	return peerings, nil
+}
+
+func vpcPeeringFromSDK(pcx types.VpcPeeringConnection) VPCPeeringInfo {
+	info := VPCPeeringInfo{
+		PeeringID: aws.ToString(pcx.VpcPeeringConnectionId),
+		Name:      nameFromTags(pcx.Tags),
+	}
+	if pcx.Status != nil {
+		info.Status = string(pcx.Status.Code)
+	}
+	if pcx.RequesterVpcInfo != nil {
+		info.RequesterVPC = aws.ToString(pcx.RequesterVpcInfo.VpcId)
+		info.RequesterCIDR = aws.ToString(pcx.RequesterVpcInfo.CidrBlock)
+	}
+	if pcx.AccepterVpcInfo != nil {
+		info.AccepterVPC = aws.ToString(pcx.AccepterVpcInfo.VpcId)
+		info.AccepterCIDR = aws.ToString(pcx.AccepterVpcInfo.CidrBlock)
+	}
+	return info
+}
+
+func (c *Client) ListNetworkACLs(ctx context.Context, vpcID string) ([]NetworkACLInfo, error) {
+	var nacls []NetworkACLInfo
+	var nextToken *string
+
+	for {
+		out, err := c.api.DescribeNetworkAcls(ctx, &awsec2.DescribeNetworkAclsInput{
+			Filters: []types.Filter{
+				{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+			},
+			NextToken: nextToken,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("DescribeNetworkAcls: %w", err)
+		}
+
+		for _, acl := range out.NetworkAcls {
+			inbound := 0
+			outbound := 0
+			for _, entry := range acl.Entries {
+				if aws.ToBool(entry.Egress) {
+					outbound++
+				} else {
+					inbound++
+				}
+			}
+			nacls = append(nacls, NetworkACLInfo{
+				NACLID:    aws.ToString(acl.NetworkAclId),
+				Name:      nameFromTags(acl.Tags),
+				IsDefault: aws.ToBool(acl.IsDefault),
+				Inbound:   inbound,
+				Outbound:  outbound,
+			})
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
+	}
+	return nacls, nil
+}
+
+func (c *Client) ListNetworkACLEntries(ctx context.Context, naclID string) ([]NetworkACLEntry, error) {
+	out, err := c.api.DescribeNetworkAcls(ctx, &awsec2.DescribeNetworkAclsInput{
+		NetworkAclIds: []string{naclID},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DescribeNetworkAcls: %w", err)
+	}
+	if len(out.NetworkAcls) == 0 {
+		return nil, nil
+	}
+
+	var entries []NetworkACLEntry
+	for _, e := range out.NetworkAcls[0].Entries {
+		direction := "inbound"
+		if aws.ToBool(e.Egress) {
+			direction = "outbound"
+		}
+
+		protocol := aws.ToString(e.Protocol)
+		switch protocol {
+		case "-1":
+			protocol = "All"
+		case "6":
+			protocol = "TCP"
+		case "17":
+			protocol = "UDP"
+		case "1":
+			protocol = "ICMP"
+		}
+
+		portRange := "All"
+		if e.PortRange != nil {
+			from := aws.ToInt32(e.PortRange.From)
+			to := aws.ToInt32(e.PortRange.To)
+			if from == to {
+				portRange = strconv.Itoa(int(from))
+			} else {
+				portRange = strconv.Itoa(int(from)) + "-" + strconv.Itoa(int(to))
+			}
+		}
+
+		cidr := aws.ToString(e.CidrBlock)
+		if cidr == "" {
+			cidr = aws.ToString(e.Ipv6CidrBlock)
+		}
+
+		action := string(e.RuleAction)
+
+		entries = append(entries, NetworkACLEntry{
+			RuleNumber: int(aws.ToInt32(e.RuleNumber)),
+			Direction:  direction,
+			Protocol:   protocol,
+			PortRange:  portRange,
+			CIDRBlock:  cidr,
+			Action:     action,
+		})
+	}
+	return entries, nil
+}
+
+func (c *Client) ListFlowLogs(ctx context.Context, vpcID string) ([]FlowLogInfo, error) {
+	var flowLogs []FlowLogInfo
+	var nextToken *string
+
+	for {
+		out, err := c.api.DescribeFlowLogs(ctx, &awsec2.DescribeFlowLogsInput{
+			Filter: []types.Filter{
+				{Name: aws.String("resource-id"), Values: []string{vpcID}},
+			},
+			NextToken: nextToken,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("DescribeFlowLogs: %w", err)
+		}
+
+		for _, fl := range out.FlowLogs {
+			flowLogs = append(flowLogs, FlowLogInfo{
+				FlowLogID:      aws.ToString(fl.FlowLogId),
+				Status:         aws.ToString(fl.FlowLogStatus),
+				TrafficType:    string(fl.TrafficType),
+				LogDestination: aws.ToString(fl.LogDestination),
+				LogFormat:      aws.ToString(fl.LogFormat),
+			})
+		}
+
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
+	}
+	return flowLogs, nil
+}
+
+func (c *Client) GetVPCTags(ctx context.Context, vpcID string) ([]types.Tag, error) {
+	out, err := c.api.DescribeVpcs(ctx, &awsec2.DescribeVpcsInput{
+		VpcIds: []string{vpcID},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DescribeVpcs: %w", err)
+	}
+	if len(out.Vpcs) == 0 {
+		return nil, nil
+	}
+	return out.Vpcs[0].Tags, nil
 }

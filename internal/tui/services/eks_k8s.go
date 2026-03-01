@@ -63,6 +63,17 @@ type K8sServiceAccount struct {
 	Age            string
 }
 
+// K8sIngress represents an ingress for TUI display.
+type K8sIngress struct {
+	Name      string
+	Namespace string
+	Class     string // spec.ingressClassName
+	Hosts     string // comma-joined from rules[].host
+	Address   string // from status.loadBalancer.ingress
+	Ports     string // from TLS (443) or default (80)
+	Age       string
+}
+
 // K8sNode represents a node for TUI display.
 type K8sNode struct {
 	Name         string
@@ -303,6 +314,63 @@ func listNodes(ctx context.Context, k8s *awseks.K8sClient, nodeGroupName string)
 	return nodes, nil
 }
 
+// listIngresses fetches ingresses from K8s API and maps them to TUI-friendly structs.
+func listIngresses(ctx context.Context, k8s *awseks.K8sClient, namespace string) ([]K8sIngress, error) {
+	ingList, err := k8s.Clientset.NetworkingV1().Ingresses(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list ingresses: %w", err)
+	}
+
+	ingresses := make([]K8sIngress, 0, len(ingList.Items))
+	for _, ing := range ingList.Items {
+		// Class
+		class := ""
+		if ing.Spec.IngressClassName != nil {
+			class = *ing.Spec.IngressClassName
+		}
+
+		// Hosts
+		var hosts []string
+		for _, rule := range ing.Spec.Rules {
+			if rule.Host != "" {
+				hosts = append(hosts, rule.Host)
+			}
+		}
+		hostsStr := strings.Join(hosts, ", ")
+		if hostsStr == "" {
+			hostsStr = "*"
+		}
+
+		// Address from status
+		var addrs []string
+		for _, lb := range ing.Status.LoadBalancer.Ingress {
+			if lb.IP != "" {
+				addrs = append(addrs, lb.IP)
+			} else if lb.Hostname != "" {
+				addrs = append(addrs, lb.Hostname)
+			}
+		}
+		address := strings.Join(addrs, ", ")
+
+		// Ports: if TLS is configured show 443, otherwise 80
+		ports := "80"
+		if len(ing.Spec.TLS) > 0 {
+			ports = "80, 443"
+		}
+
+		ingresses = append(ingresses, K8sIngress{
+			Name:      ing.Name,
+			Namespace: ing.Namespace,
+			Class:     class,
+			Hosts:     hostsStr,
+			Address:   address,
+			Ports:     ports,
+			Age:       formatAge(ing.CreationTimestamp.Time),
+		})
+	}
+	return ingresses, nil
+}
+
 // formatAge converts a time to a human-readable age string.
 func formatAge(t time.Time) string {
 	d := time.Since(t)
@@ -538,6 +606,46 @@ func NewK8sServiceAccountsTableView(k8s *awseks.K8sClient, namespace string) *Ta
 		},
 		OnEnter: func(sa K8sServiceAccount) tea.Cmd {
 			return pushView(NewK8sServiceAccountDetailView(k8s, sa))
+		},
+	})
+}
+
+// NewK8sIngressesTableView creates a table view for K8s ingresses.
+func NewK8sIngressesTableView(k8s *awseks.K8sClient, namespace string, pfMgr *portForwardManager) *TableView[K8sIngress] {
+	keyHandlers := map[string]func(K8sIngress) tea.Cmd{
+		"e": func(ing K8sIngress) tea.Cmd {
+			return pushView(NewK8sIngressYAMLView(k8s, ing))
+		},
+	}
+	if pfMgr != nil {
+		keyHandlers["F"] = func(_ K8sIngress) tea.Cmd {
+			return pushView(newPortForwardListView(pfMgr))
+		}
+	}
+
+	return NewTableView(TableViewConfig[K8sIngress]{
+		Title:       "Ingresses",
+		LoadingText: "Loading ingresses...",
+		Columns: []table.Column{
+			{Title: "Namespace", Width: 16},
+			{Title: "Name", Width: 24},
+			{Title: "Class", Width: 16},
+			{Title: "Hosts", Width: 30},
+			{Title: "Address", Width: 30},
+			{Title: "Ports", Width: 10},
+			{Title: "Age", Width: 8},
+		},
+		FetchFunc: func(ctx context.Context) ([]K8sIngress, error) {
+			return listIngresses(ctx, k8s, namespace)
+		},
+		RowMapper: func(ing K8sIngress) table.Row {
+			return table.Row{ing.Namespace, ing.Name, ing.Class,
+				ing.Hosts, ing.Address, ing.Ports, ing.Age}
+		},
+		CopyIDFunc:  func(ing K8sIngress) string { return ing.Namespace + "/" + ing.Name },
+		KeyHandlers: keyHandlers,
+		OnEnter: func(ing K8sIngress) tea.Cmd {
+			return pushView(NewK8sIngressYAMLView(k8s, ing))
 		},
 	})
 }

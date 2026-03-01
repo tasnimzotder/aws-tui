@@ -10,13 +10,17 @@ import (
 )
 
 type mockVPCAPI struct {
-	describeVpcsFunc               func(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error)
-	describeSubnetsFunc            func(ctx context.Context, params *awsec2.DescribeSubnetsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSubnetsOutput, error)
-	describeSecurityGroupsFunc     func(ctx context.Context, params *awsec2.DescribeSecurityGroupsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupsOutput, error)
-	describeInternetGatewaysFunc   func(ctx context.Context, params *awsec2.DescribeInternetGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeInternetGatewaysOutput, error)
-	describeRouteTablesFunc        func(ctx context.Context, params *awsec2.DescribeRouteTablesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeRouteTablesOutput, error)
-	describeNatGatewaysFunc        func(ctx context.Context, params *awsec2.DescribeNatGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNatGatewaysOutput, error)
-	describeSecurityGroupRulesFunc func(ctx context.Context, params *awsec2.DescribeSecurityGroupRulesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupRulesOutput, error)
+	describeVpcsFunc                     func(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error)
+	describeSubnetsFunc                  func(ctx context.Context, params *awsec2.DescribeSubnetsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSubnetsOutput, error)
+	describeSecurityGroupsFunc           func(ctx context.Context, params *awsec2.DescribeSecurityGroupsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupsOutput, error)
+	describeInternetGatewaysFunc         func(ctx context.Context, params *awsec2.DescribeInternetGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeInternetGatewaysOutput, error)
+	describeRouteTablesFunc              func(ctx context.Context, params *awsec2.DescribeRouteTablesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeRouteTablesOutput, error)
+	describeNatGatewaysFunc              func(ctx context.Context, params *awsec2.DescribeNatGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNatGatewaysOutput, error)
+	describeSecurityGroupRulesFunc       func(ctx context.Context, params *awsec2.DescribeSecurityGroupRulesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupRulesOutput, error)
+	describeVpcEndpointsFunc             func(ctx context.Context, params *awsec2.DescribeVpcEndpointsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcEndpointsOutput, error)
+	describeVpcPeeringConnectionsFunc    func(ctx context.Context, params *awsec2.DescribeVpcPeeringConnectionsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcPeeringConnectionsOutput, error)
+	describeNetworkAclsFunc              func(ctx context.Context, params *awsec2.DescribeNetworkAclsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNetworkAclsOutput, error)
+	describeFlowLogsFunc                 func(ctx context.Context, params *awsec2.DescribeFlowLogsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeFlowLogsOutput, error)
 }
 
 func (m *mockVPCAPI) DescribeVpcs(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error) {
@@ -39,6 +43,18 @@ func (m *mockVPCAPI) DescribeNatGateways(ctx context.Context, params *awsec2.Des
 }
 func (m *mockVPCAPI) DescribeSecurityGroupRules(ctx context.Context, params *awsec2.DescribeSecurityGroupRulesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupRulesOutput, error) {
 	return m.describeSecurityGroupRulesFunc(ctx, params, optFns...)
+}
+func (m *mockVPCAPI) DescribeVpcEndpoints(ctx context.Context, params *awsec2.DescribeVpcEndpointsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcEndpointsOutput, error) {
+	return m.describeVpcEndpointsFunc(ctx, params, optFns...)
+}
+func (m *mockVPCAPI) DescribeVpcPeeringConnections(ctx context.Context, params *awsec2.DescribeVpcPeeringConnectionsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcPeeringConnectionsOutput, error) {
+	return m.describeVpcPeeringConnectionsFunc(ctx, params, optFns...)
+}
+func (m *mockVPCAPI) DescribeNetworkAcls(ctx context.Context, params *awsec2.DescribeNetworkAclsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNetworkAclsOutput, error) {
+	return m.describeNetworkAclsFunc(ctx, params, optFns...)
+}
+func (m *mockVPCAPI) DescribeFlowLogs(ctx context.Context, params *awsec2.DescribeFlowLogsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeFlowLogsOutput, error) {
+	return m.describeFlowLogsFunc(ctx, params, optFns...)
 }
 
 func TestListVPCs(t *testing.T) {
@@ -466,5 +482,269 @@ func TestListSecurityGroupRules(t *testing.T) {
 	}
 	if r4.Description != "ICMP from prefix list" {
 		t.Errorf("rule[4].Description = %s, want ICMP from prefix list", r4.Description)
+	}
+}
+
+func TestListVPCEndpoints(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeVpcEndpointsFunc: func(ctx context.Context, params *awsec2.DescribeVpcEndpointsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcEndpointsOutput, error) {
+			return &awsec2.DescribeVpcEndpointsOutput{
+				VpcEndpoints: []types.VpcEndpoint{
+					{
+						VpcEndpointId:   awssdk.String("vpce-abc123"),
+						ServiceName:     awssdk.String("com.amazonaws.us-east-1.s3"),
+						VpcEndpointType: types.VpcEndpointTypeGateway,
+						State:           types.StateAvailable,
+						RouteTableIds:   []string{"rtb-111"},
+					},
+					{
+						VpcEndpointId:   awssdk.String("vpce-def456"),
+						ServiceName:     awssdk.String("com.amazonaws.us-east-1.ec2"),
+						VpcEndpointType: types.VpcEndpointTypeInterface,
+						State:           types.StateAvailable,
+						SubnetIds:       []string{"subnet-aaa", "subnet-bbb"},
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	endpoints, err := client.ListVPCEndpoints(context.Background(), "vpc-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(endpoints) != 2 {
+		t.Fatalf("expected 2 endpoints, got %d", len(endpoints))
+	}
+	if endpoints[0].EndpointID != "vpce-abc123" {
+		t.Errorf("EndpointID = %s, want vpce-abc123", endpoints[0].EndpointID)
+	}
+	if endpoints[0].Type != "Gateway" {
+		t.Errorf("Type = %s, want Gateway", endpoints[0].Type)
+	}
+	if len(endpoints[0].RouteTableIDs) != 1 {
+		t.Errorf("expected 1 route table ID, got %d", len(endpoints[0].RouteTableIDs))
+	}
+	if len(endpoints[1].SubnetIDs) != 2 {
+		t.Errorf("expected 2 subnet IDs, got %d", len(endpoints[1].SubnetIDs))
+	}
+}
+
+func TestListVPCPeering(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeVpcPeeringConnectionsFunc: func(ctx context.Context, params *awsec2.DescribeVpcPeeringConnectionsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcPeeringConnectionsOutput, error) {
+			// Return data only for requester query (first call)
+			for _, f := range params.Filters {
+				if awssdk.ToString(f.Name) == "requester-vpc-info.vpc-id" {
+					return &awsec2.DescribeVpcPeeringConnectionsOutput{
+						VpcPeeringConnections: []types.VpcPeeringConnection{
+							{
+								VpcPeeringConnectionId: awssdk.String("pcx-111"),
+								Status:                 &types.VpcPeeringConnectionStateReason{Code: types.VpcPeeringConnectionStateReasonCodeActive},
+								Tags:                   []types.Tag{{Key: awssdk.String("Name"), Value: awssdk.String("my-peering")}},
+								RequesterVpcInfo:        &types.VpcPeeringConnectionVpcInfo{VpcId: awssdk.String("vpc-123"), CidrBlock: awssdk.String("10.0.0.0/16")},
+								AccepterVpcInfo:         &types.VpcPeeringConnectionVpcInfo{VpcId: awssdk.String("vpc-456"), CidrBlock: awssdk.String("10.1.0.0/16")},
+							},
+						},
+					}, nil
+				}
+			}
+			return &awsec2.DescribeVpcPeeringConnectionsOutput{}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	peerings, err := client.ListVPCPeering(context.Background(), "vpc-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peerings) != 1 {
+		t.Fatalf("expected 1 peering, got %d", len(peerings))
+	}
+	p := peerings[0]
+	if p.PeeringID != "pcx-111" {
+		t.Errorf("PeeringID = %s, want pcx-111", p.PeeringID)
+	}
+	if p.Name != "my-peering" {
+		t.Errorf("Name = %s, want my-peering", p.Name)
+	}
+	if p.Status != "active" {
+		t.Errorf("Status = %s, want active", p.Status)
+	}
+	if p.RequesterCIDR != "10.0.0.0/16" {
+		t.Errorf("RequesterCIDR = %s, want 10.0.0.0/16", p.RequesterCIDR)
+	}
+	if p.AccepterVPC != "vpc-456" {
+		t.Errorf("AccepterVPC = %s, want vpc-456", p.AccepterVPC)
+	}
+}
+
+func TestListNetworkACLs(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeNetworkAclsFunc: func(ctx context.Context, params *awsec2.DescribeNetworkAclsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNetworkAclsOutput, error) {
+			return &awsec2.DescribeNetworkAclsOutput{
+				NetworkAcls: []types.NetworkAcl{
+					{
+						NetworkAclId: awssdk.String("acl-123"),
+						IsDefault:    awssdk.Bool(true),
+						Tags:         []types.Tag{{Key: awssdk.String("Name"), Value: awssdk.String("default-acl")}},
+						Entries: []types.NetworkAclEntry{
+							{Egress: awssdk.Bool(false), RuleNumber: awssdk.Int32(100)},
+							{Egress: awssdk.Bool(false), RuleNumber: awssdk.Int32(200)},
+							{Egress: awssdk.Bool(true), RuleNumber: awssdk.Int32(100)},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	nacls, err := client.ListNetworkACLs(context.Background(), "vpc-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(nacls) != 1 {
+		t.Fatalf("expected 1 NACL, got %d", len(nacls))
+	}
+	if nacls[0].NACLID != "acl-123" {
+		t.Errorf("NACLID = %s, want acl-123", nacls[0].NACLID)
+	}
+	if !nacls[0].IsDefault {
+		t.Error("expected IsDefault to be true")
+	}
+	if nacls[0].Inbound != 2 {
+		t.Errorf("Inbound = %d, want 2", nacls[0].Inbound)
+	}
+	if nacls[0].Outbound != 1 {
+		t.Errorf("Outbound = %d, want 1", nacls[0].Outbound)
+	}
+}
+
+func TestListNetworkACLEntries(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeNetworkAclsFunc: func(ctx context.Context, params *awsec2.DescribeNetworkAclsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNetworkAclsOutput, error) {
+			return &awsec2.DescribeNetworkAclsOutput{
+				NetworkAcls: []types.NetworkAcl{
+					{
+						NetworkAclId: awssdk.String("acl-123"),
+						Entries: []types.NetworkAclEntry{
+							{
+								Egress:     awssdk.Bool(false),
+								RuleNumber: awssdk.Int32(100),
+								Protocol:   awssdk.String("6"),
+								PortRange:  &types.PortRange{From: awssdk.Int32(443), To: awssdk.Int32(443)},
+								CidrBlock:  awssdk.String("0.0.0.0/0"),
+								RuleAction: types.RuleActionAllow,
+							},
+							{
+								Egress:     awssdk.Bool(true),
+								RuleNumber: awssdk.Int32(100),
+								Protocol:   awssdk.String("-1"),
+								CidrBlock:  awssdk.String("0.0.0.0/0"),
+								RuleAction: types.RuleActionAllow,
+							},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	entries, err := client.ListNetworkACLEntries(context.Background(), "acl-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].Direction != "inbound" {
+		t.Errorf("entries[0].Direction = %s, want inbound", entries[0].Direction)
+	}
+	if entries[0].Protocol != "TCP" {
+		t.Errorf("entries[0].Protocol = %s, want TCP", entries[0].Protocol)
+	}
+	if entries[0].PortRange != "443" {
+		t.Errorf("entries[0].PortRange = %s, want 443", entries[0].PortRange)
+	}
+	if entries[0].Action != "allow" {
+		t.Errorf("entries[0].Action = %s, want allow", entries[0].Action)
+	}
+	if entries[1].Direction != "outbound" {
+		t.Errorf("entries[1].Direction = %s, want outbound", entries[1].Direction)
+	}
+	if entries[1].Protocol != "All" {
+		t.Errorf("entries[1].Protocol = %s, want All", entries[1].Protocol)
+	}
+}
+
+func TestListFlowLogs(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeFlowLogsFunc: func(ctx context.Context, params *awsec2.DescribeFlowLogsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeFlowLogsOutput, error) {
+			return &awsec2.DescribeFlowLogsOutput{
+				FlowLogs: []types.FlowLog{
+					{
+						FlowLogId:      awssdk.String("fl-abc123"),
+						FlowLogStatus:  awssdk.String("ACTIVE"),
+						TrafficType:    types.TrafficTypeAll,
+						LogDestination: awssdk.String("arn:aws:s3:::my-bucket"),
+						LogFormat:      awssdk.String("${version} ${account-id} ${interface-id}"),
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	flowLogs, err := client.ListFlowLogs(context.Background(), "vpc-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(flowLogs) != 1 {
+		t.Fatalf("expected 1 flow log, got %d", len(flowLogs))
+	}
+	if flowLogs[0].FlowLogID != "fl-abc123" {
+		t.Errorf("FlowLogID = %s, want fl-abc123", flowLogs[0].FlowLogID)
+	}
+	if flowLogs[0].Status != "ACTIVE" {
+		t.Errorf("Status = %s, want ACTIVE", flowLogs[0].Status)
+	}
+	if flowLogs[0].TrafficType != "ALL" {
+		t.Errorf("TrafficType = %s, want ALL", flowLogs[0].TrafficType)
+	}
+}
+
+func TestGetVPCTags(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeVpcsFunc: func(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error) {
+			return &awsec2.DescribeVpcsOutput{
+				Vpcs: []types.Vpc{
+					{
+						VpcId: awssdk.String("vpc-123"),
+						Tags: []types.Tag{
+							{Key: awssdk.String("Name"), Value: awssdk.String("prod-vpc")},
+							{Key: awssdk.String("Environment"), Value: awssdk.String("production")},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	tags, err := client.GetVPCTags(context.Background(), "vpc-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(tags))
+	}
+	if awssdk.ToString(tags[0].Key) != "Name" {
+		t.Errorf("tags[0].Key = %s, want Name", awssdk.ToString(tags[0].Key))
+	}
+	if awssdk.ToString(tags[1].Value) != "production" {
+		t.Errorf("tags[1].Value = %s, want production", awssdk.ToString(tags[1].Value))
 	}
 }

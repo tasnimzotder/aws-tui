@@ -25,6 +25,8 @@ const (
 	HelpContextEC2Detail
 	HelpContextELB
 	HelpContextELBDetail
+	HelpContextVPC
+	HelpContextVPCDetail
 )
 
 type helpBinding struct {
@@ -109,7 +111,7 @@ func renderHelp(ctx HelpContext, width, height int) string {
 		bindings = []helpBinding{
 			{"Tab", "Next tab"},
 			{"Shift+Tab", "Prev tab"},
-			{"1-8", "Jump to tab"},
+			{"1-9", "Jump to tab"},
 			{"N", "Change namespace (K8s tabs)"},
 			{"r", "Refresh data"},
 			{"c", "Copy ID"},
@@ -225,6 +227,33 @@ func renderHelp(ctx HelpContext, width, height int) string {
 			{"?", "Toggle this help"},
 			{"q", "Quit"},
 		}
+	case HelpContextVPC:
+		title = "Keybindings — VPC"
+		bindings = []helpBinding{
+			{"Enter", "VPC detail"},
+			{"/", "Filter rows"},
+			{"n/p", "Next/prev page"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"j/k", "Navigate up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
+	case HelpContextVPCDetail:
+		title = "Keybindings — VPC Detail"
+		bindings = []helpBinding{
+			{"Tab", "Next tab"},
+			{"Shift+Tab", "Prev tab"},
+			{"1-9/0", "Jump to tab (0=Tags)"},
+			{"Enter", "Drill down (NACLs, SGs, etc.)"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"j/k", "Scroll up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
 	}
 
 	var b strings.Builder
@@ -263,7 +292,7 @@ func detectHelpContext(v View) HelpContext {
 	case *RootView:
 		return HelpContextRoot
 	case *VPCDetailView:
-		return HelpContextDetail
+		return HelpContextVPCDetail
 	case *EC2DetailView:
 		return HelpContextEC2Detail
 	case *ELBDetailView:

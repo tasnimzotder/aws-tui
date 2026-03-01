@@ -170,3 +170,9 @@ func NewK8sServiceAccountYAMLView(k8s *awseks.K8sClient, sa K8sServiceAccount) *
 		return k8s.Clientset.CoreV1().ServiceAccounts(sa.Namespace).Get(ctx, sa.Name, metav1.GetOptions{})
 	})
 }
+
+func NewK8sIngressYAMLView(k8s *awseks.K8sClient, ing K8sIngress) *K8sYAMLSpecView {
+	return newK8sYAMLSpecView("YAML: "+ing.Name, func(ctx context.Context) (any, error) {
+		return k8s.Clientset.NetworkingV1().Ingresses(ing.Namespace).Get(ctx, ing.Name, metav1.GetOptions{})
+	})
+}

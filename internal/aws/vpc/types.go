@@ -67,3 +67,47 @@ type SecurityGroupRule struct {
 	Source      string // CIDR, security group ID, or prefix list (for inbound)
 	Description string
 }
+
+type VPCEndpointInfo struct {
+	EndpointID    string
+	ServiceName   string
+	Type          string // Interface, Gateway, GatewayLoadBalancer
+	State         string
+	SubnetIDs     []string
+	RouteTableIDs []string
+}
+
+type VPCPeeringInfo struct {
+	PeeringID     string
+	Name          string
+	Status        string
+	RequesterVPC  string
+	RequesterCIDR string
+	AccepterVPC   string
+	AccepterCIDR  string
+}
+
+type NetworkACLInfo struct {
+	NACLID    string
+	Name      string
+	IsDefault bool
+	Inbound   int
+	Outbound  int
+}
+
+type NetworkACLEntry struct {
+	RuleNumber int
+	Direction  string // inbound / outbound
+	Protocol   string
+	PortRange  string
+	CIDRBlock  string
+	Action     string // allow / deny
+}
+
+type FlowLogInfo struct {
+	FlowLogID      string
+	Status         string
+	TrafficType    string
+	LogDestination string
+	LogFormat      string
+}
