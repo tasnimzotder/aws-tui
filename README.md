@@ -23,21 +23,24 @@ A terminal UI for browsing and managing AWS resources, built with Go and [Bubble
 | **EC2** | Instances — name, type, state, IPs |
 | **ECS** | Clusters → Services → Tasks → Logs, with auto-scaling config and deployment history |
 | **VPC** | VPCs → Dashboard, Subnets, Security Groups, Route Tables, Internet Gateways, NAT Gateways |
-| **EKS** | Clusters → Dashboard, Node Groups, Add-ons, Fargate Profiles, Access Entries, Pods, Services, Deployments |
+| **EKS** | Clusters → Dashboard, Node Groups, Add-ons, Fargate Profiles, Access Entries, Pods, Services, Deployments, Service Accounts (IRSA) |
 | **ECR** | Repositories → Images |
 | **ELB** | Load Balancers → Listeners → Target Groups |
 | **S3** | Buckets → Objects (prefix/folder navigation, file preview, download with progress) |
 | **IAM** | Users → Policies/Groups, Roles → Policies/Trust Policy, Policies → Attached Entities |
 | **Cost Explorer** | Month-to-date cost breakdown by service |
 
-### EKS Pod Operations
+### EKS Operations
 
-| Action | Key | Description |
-|--------|-----|-------------|
-| Exec | `x` | Interactive shell into a pod (prompts for command, defaults to `/bin/sh`) |
-| Logs | `l` | Stream pod container logs with follow, search, and word wrap |
-| Port Forward | `f` | Forward a local port to a pod (e.g. `8080:80`) |
-| List Forwards | `F` | View and manage active port-forward sessions |
+| Action | Key | Scope | Description |
+|--------|-----|-------|-------------|
+| Exec | `x` | Pods, Nodes | Interactive shell (prompts for command, defaults to `/bin/sh`) |
+| Logs | `l` | Pods | Stream pod container logs with follow, search, and word wrap |
+| Port Forward | `f` | Pods | Forward a local port to a pod (e.g. `8080:80`) |
+| List Forwards | `F` | Pods, Services | View and manage active port-forward sessions |
+| YAML Spec | `e` | All K8s tabs | View resource YAML with syntax highlighting and search |
+| Namespace | `N` | K8s tabs | Filter by namespace or clear filter |
+| Switch Tab | `Tab` / `1-8` | Cluster detail | Navigate between cluster detail tabs |
 
 Multi-container pods show a container picker before exec/logs.
 
