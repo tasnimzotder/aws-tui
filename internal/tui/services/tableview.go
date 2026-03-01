@@ -231,9 +231,7 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "r":
-			v.loading = true
-			v.err = nil
-			return v, tea.Batch(v.spinner.Tick, v.fetchData())
+			return v, v.Refresh()
 		case "n":
 			v.nextPage()
 			return v, nil
@@ -274,7 +272,7 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 
 func (v *TableView[T]) View() string {
 	if v.loading {
-		return v.spinner.View() + " " + v.config.LoadingText
+		return v.table.View() + "\n" + theme.LoadingStyle.Render(v.spinner.View()+" "+v.config.LoadingText)
 	}
 	if v.err != nil {
 		return theme.ErrorStyle.Render(fmt.Sprintf("Error: %v", v.err))
@@ -288,6 +286,13 @@ func (v *TableView[T]) View() string {
 		out += "\n" + theme.MutedStyle.Render(status)
 	}
 	return out
+}
+
+// RefreshableView implementation
+func (v *TableView[T]) Refresh() tea.Cmd {
+	v.loading = true
+	v.err = nil
+	return tea.Batch(v.spinner.Tick, v.fetchData())
 }
 
 // FilterableView implementation

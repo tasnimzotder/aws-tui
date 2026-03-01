@@ -47,6 +47,12 @@ func NewIAMSubMenuView(client *awsclient.ServiceClient) *IAMSubMenuView {
 }
 
 func (v *IAMSubMenuView) Title() string { return "IAM" }
+
+func (v *IAMSubMenuView) HelpContext() *HelpContext {
+	ctx := HelpContextRoot
+	return &ctx
+}
+
 func (v *IAMSubMenuView) Init() tea.Cmd { return nil }
 func (v *IAMSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -189,6 +195,12 @@ func NewIAMUserSubMenuView(client *awsclient.ServiceClient, userName string) *IA
 }
 
 func (v *IAMUserSubMenuView) Title() string { return v.userName }
+
+func (v *IAMUserSubMenuView) HelpContext() *HelpContext {
+	ctx := HelpContextRoot
+	return &ctx
+}
+
 func (v *IAMUserSubMenuView) Init() tea.Cmd { return nil }
 func (v *IAMUserSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -248,6 +260,12 @@ func NewIAMRoleSubMenuView(client *awsclient.ServiceClient, roleName, trustDoc s
 }
 
 func (v *IAMRoleSubMenuView) Title() string { return v.roleName }
+
+func (v *IAMRoleSubMenuView) HelpContext() *HelpContext {
+	ctx := HelpContextRoot
+	return &ctx
+}
+
 func (v *IAMRoleSubMenuView) Init() tea.Cmd { return nil }
 func (v *IAMRoleSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {

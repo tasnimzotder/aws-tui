@@ -273,38 +273,10 @@ type HelpContextProvider interface {
 
 // detectHelpContext determines the help context from the current view.
 func detectHelpContext(v View) HelpContext {
-	// Check if view provides its own help context
 	if hcp, ok := v.(HelpContextProvider); ok {
 		if ctx := hcp.HelpContext(); ctx != nil {
 			return *ctx
 		}
-	}
-
-	switch v.(type) {
-	case *TextView:
-		return HelpContextTextView
-	case *TaskDetailView:
-		return HelpContextDetail
-	case *EKSClusterDetailView:
-		return HelpContextEKSDetail
-	case *EKSLogView:
-		return HelpContextK8sLogs
-	case *RootView:
-		return HelpContextRoot
-	case *VPCDetailView:
-		return HelpContextVPCDetail
-	case *EC2DetailView:
-		return HelpContextEC2Detail
-	case *ELBDetailView:
-		return HelpContextELBDetail
-	case *ECSServiceSubMenuView:
-		return HelpContextRoot
-	case *IAMSubMenuView:
-		return HelpContextRoot
-	case *IAMUserSubMenuView:
-		return HelpContextRoot
-	case *IAMRoleSubMenuView:
-		return HelpContextRoot
 	}
 	if _, ok := v.(FilterableView); ok {
 		return HelpContextTable

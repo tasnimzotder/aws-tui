@@ -39,13 +39,13 @@ func TestEKSClusterDetailView_TabNames(t *testing.T) {
 		"Pods", "Services", "Deployments", "Svc Accounts", "Ingresses",
 	}
 
-	if len(v.tabNames) != 9 {
-		t.Fatalf("expected 9 tabs, got %d", len(v.tabNames))
+	if len(v.tabs.TabNames) != 9 {
+		t.Fatalf("expected 9 tabs, got %d", len(v.tabs.TabNames))
 	}
 
 	for i, name := range expectedTabs {
-		if v.tabNames[i] != name {
-			t.Errorf("tab %d: got %q, want %q", i, v.tabNames[i], name)
+		if v.tabs.TabNames[i] != name {
+			t.Errorf("tab %d: got %q, want %q", i, v.tabs.TabNames[i], name)
 		}
 	}
 }
@@ -57,31 +57,28 @@ func TestEKSClusterDetailView_TabSwitch(t *testing.T) {
 		Version: "1.28",
 	}
 	v := NewEKSClusterDetailView(nil, cluster, "us-east-1")
-	// Mark as not loading so tab switches work without K8s
+	v.tabs.InitTab = func(idx int) View { return nil }
 	v.loading = false
 
-	// Initially at tab 0
-	if v.activeTab != 0 {
-		t.Fatalf("initial activeTab = %d, want 0", v.activeTab)
-	}
-
-	// Press Tab to cycle forward
-	v.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if v.activeTab != 1 {
-		t.Errorf("after Tab: activeTab = %d, want 1", v.activeTab)
+	if v.tabs.ActiveTab != 0 {
+		t.Fatalf("initial activeTab = %d, want 0", v.tabs.ActiveTab)
 	}
 
 	v.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if v.activeTab != 2 {
-		t.Errorf("after 2nd Tab: activeTab = %d, want 2", v.activeTab)
+	if v.tabs.ActiveTab != 1 {
+		t.Errorf("after Tab: activeTab = %d, want 1", v.tabs.ActiveTab)
 	}
 
-	// Cycle through all tabs back to 0
+	v.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if v.tabs.ActiveTab != 2 {
+		t.Errorf("after 2nd Tab: activeTab = %d, want 2", v.tabs.ActiveTab)
+	}
+
 	for i := 0; i < 7; i++ {
 		v.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	}
-	if v.activeTab != 0 {
-		t.Errorf("after cycling all tabs: activeTab = %d, want 0", v.activeTab)
+	if v.tabs.ActiveTab != 0 {
+		t.Errorf("after cycling all tabs: activeTab = %d, want 0", v.tabs.ActiveTab)
 	}
 }
 
@@ -92,6 +89,7 @@ func TestEKSClusterDetailView_NumberKeys(t *testing.T) {
 		Version: "1.28",
 	}
 	v := NewEKSClusterDetailView(nil, cluster, "us-east-1")
+	v.tabs.InitTab = func(idx int) View { return nil }
 	v.loading = false
 
 	tests := []struct {
@@ -105,12 +103,14 @@ func TestEKSClusterDetailView_NumberKeys(t *testing.T) {
 		{"5", 4},
 		{"6", 5},
 		{"7", 6},
+		{"8", 7},
+		{"9", 8},
 	}
 
 	for _, tt := range tests {
 		v.Update(tea.KeyPressMsg{Code: rune(tt.key[0]), Text: tt.key})
-		if v.activeTab != tt.wantTab {
-			t.Errorf("key %q: activeTab = %d, want %d", tt.key, v.activeTab, tt.wantTab)
+		if v.tabs.ActiveTab != tt.wantTab {
+			t.Errorf("key %q: activeTab = %d, want %d", tt.key, v.tabs.ActiveTab, tt.wantTab)
 		}
 	}
 }
@@ -439,6 +439,54 @@ func TestEKSAccessEntryDetailView_Content(t *testing.T) {
 		if !strings.Contains(content, c.text) {
 			t.Errorf("content should contain %s (%q), got:\n%s", c.label, c.text, content)
 		}
+	}
+}
+
+// --- Namespace Tracking ---
+
+func TestEKSClusterDetailView_NamespaceChange_ClearsK8sTabs(t *testing.T) {
+	cluster := awseks.EKSCluster{Name: "test", Status: "ACTIVE", Version: "1.28"}
+	v := NewEKSClusterDetailView(nil, cluster, "us-east-1")
+	v.loading = false
+
+	// Simulate having K8s tabs initialized with namespace "default"
+	v.namespace = "default"
+	v.lastNamespace = "default"
+	// Place dummy views in K8s tab slots
+	for i := 4; i < 9; i++ {
+		v.tabs.TabViews[i] = &eksK8sPlaceholderView{name: "dummy", k8sOK: true}
+	}
+	// Override InitTab to return nil (no real K8s client)
+	v.tabs.InitTab = func(idx int) View { return nil }
+
+	// Change namespace
+	v.namespace = "kube-system"
+
+	// Switch to a K8s tab — should clear all K8s tabs because namespace differs
+	v.tabs.SwitchTab(5)
+	for i := 4; i < 9; i++ {
+		if v.tabs.TabViews[i] != nil {
+			t.Errorf("K8s tab %d should be nil after namespace change, got %v", i, v.tabs.TabViews[i])
+		}
+	}
+}
+
+func TestEKSClusterDetailView_SameNamespace_KeepsTabs(t *testing.T) {
+	cluster := awseks.EKSCluster{Name: "test", Status: "ACTIVE", Version: "1.28"}
+	v := NewEKSClusterDetailView(nil, cluster, "us-east-1")
+	v.loading = false
+
+	// Set up namespace and lastNamespace to be the same
+	v.namespace = "default"
+	v.lastNamespace = "default"
+	dummy := &eksK8sPlaceholderView{name: "dummy", k8sOK: true}
+	v.tabs.TabViews[5] = dummy
+	v.tabs.InitTab = func(idx int) View { return nil }
+
+	// Switch to tab 5 — same namespace, should keep existing view
+	v.tabs.SwitchTab(5)
+	if v.tabs.TabViews[5] != dummy {
+		t.Error("K8s tab 5 should be preserved when namespace hasn't changed")
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -19,18 +18,6 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Messages
-// ---------------------------------------------------------------------------
-
-type ec2NavigateVPCMsg struct {
-	vpc awsvpc.VPCInfo
-}
-
-type ec2NavigateVPCErrMsg struct {
-	err error
-}
-
-// ---------------------------------------------------------------------------
 // EC2 Detail View
 // ---------------------------------------------------------------------------
 
@@ -40,26 +27,37 @@ type EC2DetailView struct {
 	profile  string
 	region   string
 
-	// Tabs
-	activeTab int
-	tabNames  []string
-	tabViews  []View
-
-	spinner spinner.Model
-	width   int
+	tabs   *TabController
+	width  int
 	height  int
 }
 
 func NewEC2DetailView(client *awsclient.ServiceClient, instance awsec2.EC2Instance, profile, region string) *EC2DetailView {
-	return &EC2DetailView{
+	v := &EC2DetailView{
 		client:   client,
 		instance: instance,
 		profile:  profile,
 		region:   region,
-		tabNames: []string{"Details", "Security Groups", "Volumes", "Tags"},
-		tabViews: make([]View, 4),
-		spinner:  theme.NewSpinner(),
 	}
+	v.tabs = NewTabController(
+		[]string{"Details", "Security Groups", "Volumes", "Tags"},
+		v.createTab,
+	)
+	return v
+}
+
+func (v *EC2DetailView) createTab(idx int) View {
+	switch idx {
+	case 0:
+		return newEC2DetailsTab(v.instance)
+	case 1:
+		return newEC2SGTab(v.client, v.instance.SecurityGroups)
+	case 2:
+		return newEC2VolumesTab(v.client, v.instance.Volumes)
+	case 3:
+		return newEC2TagsTab(v.instance.Tags)
+	}
+	return nil
 }
 
 func (v *EC2DetailView) Title() string {
@@ -75,127 +73,43 @@ func (v *EC2DetailView) HelpContext() *HelpContext {
 }
 
 func (v *EC2DetailView) Init() tea.Cmd {
-	v.initTab(0)
-	if v.tabViews[0] != nil {
-		return v.tabViews[0].Init()
-	}
-	return nil
+	cmd := v.tabs.SwitchTab(0)
+	v.tabs.ResizeActive(v.width, v.contentHeight())
+	return cmd
 }
 
 func (v *EC2DetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
-	case ec2NavigateVPCMsg:
+	case navigateVPCMsg:
 		return v, pushView(NewVPCDetailView(v.client, msg.vpc))
 
-	case ec2NavigateVPCErrMsg:
+	case navigateVPCErrMsg:
 		return v, nil
 
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "tab":
-			return v, v.switchTab((v.activeTab + 1) % len(v.tabNames))
-		case "shift+tab":
-			next := v.activeTab - 1
-			if next < 0 {
-				next = len(v.tabNames) - 1
-			}
-			return v, v.switchTab(next)
-		case "1":
-			return v, v.switchTab(0)
-		case "2":
-			return v, v.switchTab(1)
-		case "3":
-			return v, v.switchTab(2)
-		case "4":
-			return v, v.switchTab(3)
+		key := msg.String()
+		if handled, cmd := v.tabs.HandleKey(key); handled {
+			v.tabs.ResizeActive(v.width, v.contentHeight())
+			return v, cmd
+		}
+		switch key {
 		case "x":
 			return v, pushView(newSSMInputView(v.instance, v.profile, v.region))
 		case "v":
 			if v.instance.VpcID != "" {
-				return v, v.navigateToVPC()
-			}
-		default:
-			if v.tabViews[v.activeTab] != nil {
-				updated, cmd := v.tabViews[v.activeTab].Update(msg)
-				v.tabViews[v.activeTab] = updated
-				return v, cmd
+				return v, NavigateToVPC(v.client.VPC, v.instance.VpcID)
 			}
 		}
+		return v, v.tabs.DelegateUpdate(msg)
 
 	case tea.WindowSizeMsg:
 		v.width = msg.Width
 		v.height = msg.Height
-		v.resizeActiveTab()
-		return v, nil
-
-	case spinner.TickMsg:
-		if v.tabViews[v.activeTab] != nil {
-			updated, cmd := v.tabViews[v.activeTab].Update(msg)
-			v.tabViews[v.activeTab] = updated
-			return v, cmd
-		}
+		v.tabs.ResizeActive(v.width, v.contentHeight())
 		return v, nil
 
 	default:
-		if v.tabViews[v.activeTab] != nil {
-			updated, cmd := v.tabViews[v.activeTab].Update(msg)
-			v.tabViews[v.activeTab] = updated
-			return v, cmd
-		}
-	}
-
-	return v, nil
-}
-
-func (v *EC2DetailView) navigateToVPC() tea.Cmd {
-	client := v.client
-	vpcID := v.instance.VpcID
-	return func() tea.Msg {
-		vpcs, err := client.VPC.ListVPCs(context.Background())
-		if err != nil {
-			return ec2NavigateVPCErrMsg{err: err}
-		}
-		for _, vpc := range vpcs {
-			if vpc.VPCID == vpcID {
-				return ec2NavigateVPCMsg{vpc: vpc}
-			}
-		}
-		return ec2NavigateVPCErrMsg{err: fmt.Errorf("VPC %s not found", vpcID)}
-	}
-}
-
-func (v *EC2DetailView) switchTab(idx int) tea.Cmd {
-	v.activeTab = idx
-	v.initTab(idx)
-	v.resizeActiveTab()
-	if v.tabViews[idx] != nil {
-		return v.tabViews[idx].Init()
-	}
-	return nil
-}
-
-func (v *EC2DetailView) initTab(idx int) {
-	if v.tabViews[idx] != nil {
-		return
-	}
-	switch idx {
-	case 0:
-		v.tabViews[idx] = newEC2DetailsTab(v.instance)
-	case 1:
-		v.tabViews[idx] = newEC2SGTab(v.client, v.instance.SecurityGroups)
-	case 2:
-		v.tabViews[idx] = newEC2VolumesTab(v.client, v.instance.Volumes)
-	case 3:
-		v.tabViews[idx] = newEC2TagsTab(v.instance.Tags)
-	}
-}
-
-func (v *EC2DetailView) resizeActiveTab() {
-	if v.tabViews[v.activeTab] == nil {
-		return
-	}
-	if rv, ok := v.tabViews[v.activeTab].(ResizableView); ok {
-		rv.SetSize(v.width, v.contentHeight())
+		return v, v.tabs.DelegateUpdate(msg)
 	}
 }
 
@@ -210,10 +124,10 @@ func (v *EC2DetailView) contentHeight() int {
 func (v *EC2DetailView) View() string {
 	var sections []string
 	sections = append(sections, v.renderDashboard())
-	sections = append(sections, v.renderTabBar())
+	sections = append(sections, v.tabs.RenderTabBar())
 
-	if v.tabViews[v.activeTab] != nil {
-		sections = append(sections, v.tabViews[v.activeTab].View())
+	if av := v.tabs.ActiveView(); av != nil {
+		sections = append(sections, av.View())
 	} else {
 		sections = append(sections, theme.MutedStyle.Render("No data"))
 	}
@@ -223,84 +137,63 @@ func (v *EC2DetailView) View() string {
 
 func (v *EC2DetailView) renderDashboard() string {
 	inst := v.instance
+	label := theme.MutedStyle
 
-	stateStyle := theme.MutedStyle
-	stateIcon := "●"
-	if inst.State == "running" {
-		stateStyle = theme.SuccessStyle
-	} else if inst.State == "stopped" {
-		stateStyle = lipgloss.NewStyle().Foreground(theme.Warning)
+	// Title: ID + Name + status badge
+	title := theme.DashboardTitleStyle.Render(inst.InstanceID)
+	if inst.Name != "" {
+		title += "  " + inst.Name
 	}
+	title += "  " + theme.RenderStatus(inst.State)
 
-	line1 := fmt.Sprintf("%s  %s  %s",
-		inst.InstanceID,
-		inst.Name,
-		stateStyle.Render(stateIcon+" "+inst.State))
+	line1 := label.Render("Type: ") + inst.Type +
+		label.Render("  AZ: ") + inst.AZ +
+		label.Render("  Arch: ") + inst.Architecture
 
-	line2 := fmt.Sprintf("Type: %s  AZ: %s  Arch: %s",
-		inst.Type, inst.AZ, inst.Architecture)
-
-	line3Parts := []string{}
+	line2Parts := []string{}
 	if inst.ImageID != "" {
-		line3Parts = append(line3Parts, "AMI: "+inst.ImageID)
+		line2Parts = append(line2Parts, label.Render("AMI: ")+inst.ImageID)
 	}
 	if inst.KeyName != "" {
-		line3Parts = append(line3Parts, "Key: "+inst.KeyName)
+		line2Parts = append(line2Parts, label.Render("Key: ")+inst.KeyName)
 	}
 	if inst.IAMProfile != "" {
-		line3Parts = append(line3Parts, "IAM: "+inst.IAMProfile)
+		line2Parts = append(line2Parts, label.Render("IAM: ")+inst.IAMProfile)
+	}
+	line2 := strings.Join(line2Parts, "  ")
+
+	line3Parts := []string{}
+	if inst.VpcID != "" {
+		line3Parts = append(line3Parts, label.Render("VPC: ")+inst.VpcID)
+	}
+	if inst.SubnetID != "" {
+		line3Parts = append(line3Parts, label.Render("Subnet: ")+inst.SubnetID)
+	}
+	if !inst.LaunchTime.IsZero() {
+		line3Parts = append(line3Parts, label.Render("Launch: ")+inst.LaunchTime.Format("2006-01-02"))
 	}
 	line3 := strings.Join(line3Parts, "  ")
 
-	line4Parts := []string{}
-	if inst.VpcID != "" {
-		line4Parts = append(line4Parts, "VPC: "+inst.VpcID)
-	}
-	if inst.SubnetID != "" {
-		line4Parts = append(line4Parts, "Subnet: "+inst.SubnetID)
-	}
-	if !inst.LaunchTime.IsZero() {
-		line4Parts = append(line4Parts, "Launch: "+inst.LaunchTime.Format("2006-01-02"))
-	}
-	line4 := strings.Join(line4Parts, "  ")
-
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Primary).
-		Padding(0, 1)
-
+	boxStyle := theme.DashboardBoxStyle
 	if v.width > 0 {
 		boxStyle = boxStyle.Width(v.width - 4)
 	}
 
-	content := line1 + "\n" + line2
+	content := title + "\n" + line1
+	if line2 != "" {
+		content += "\n" + line2
+	}
 	if line3 != "" {
 		content += "\n" + line3
-	}
-	if line4 != "" {
-		content += "\n" + line4
 	}
 
 	return boxStyle.Render(content)
 }
 
-func (v *EC2DetailView) renderTabBar() string {
-	var tabs []string
-	for i, name := range v.tabNames {
-		label := fmt.Sprintf("%d:%s", i+1, name)
-		if i == v.activeTab {
-			tabs = append(tabs, theme.TabActiveStyle.Render(label))
-		} else {
-			tabs = append(tabs, theme.TabInactiveStyle.Render(label))
-		}
-	}
-	return theme.TabBarStyle.Render(strings.Join(tabs, ""))
-}
-
 func (v *EC2DetailView) SetSize(width, height int) {
 	v.width = width
 	v.height = height
-	v.resizeActiveTab()
+	v.tabs.ResizeActive(v.width, v.contentHeight())
 }
 
 // ---------------------------------------------------------------------------
@@ -328,21 +221,10 @@ func (v *ec2DetailsTab) Init() tea.Cmd {
 func (v *ec2DetailsTab) initViewport() {
 	h := v.height - 2
 	if h < 1 {
-		h = 10
+		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(
-		viewport.WithWidth(w),
-		viewport.WithHeight(h),
-	)
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 
@@ -554,21 +436,10 @@ func (v *ec2TagsTab) Init() tea.Cmd {
 func (v *ec2TagsTab) initViewport() {
 	h := v.height - 2
 	if h < 1 {
-		h = 10
+		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(
-		viewport.WithWidth(w),
-		viewport.WithHeight(h),
-	)
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 

@@ -10,6 +10,7 @@ import (
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awsecs "tasnim.dev/aws-tui/internal/aws/ecs"
+	"tasnim.dev/aws-tui/internal/tui/theme"
 	"tasnim.dev/aws-tui/internal/utils"
 )
 
@@ -29,7 +30,7 @@ func NewECSClustersView(client *awsclient.ServiceClient) *TableView[awsecs.ECSCl
 			return client.ECS.ListClusters(ctx)
 		},
 		RowMapper: func(cl awsecs.ECSCluster) table.Row {
-			return table.Row{cl.Name, cl.Status, fmt.Sprintf("%d", cl.ServiceCount), fmt.Sprintf("%d", cl.RunningTaskCount)}
+			return table.Row{cl.Name, theme.RenderStatus(cl.Status), fmt.Sprintf("%d", cl.ServiceCount), fmt.Sprintf("%d", cl.RunningTaskCount)}
 		},
 		CopyIDFunc:  func(cl awsecs.ECSCluster) string { return cl.Name },
 		CopyARNFunc: func(cl awsecs.ECSCluster) string { return cl.ARN },
@@ -57,7 +58,7 @@ func NewECSServicesView(client *awsclient.ServiceClient, clusterName string) *Ta
 			return client.ECS.ListServices(ctx, clusterName)
 		},
 		RowMapper: func(svc awsecs.ECSService) table.Row {
-			return table.Row{svc.Name, svc.Status, fmt.Sprintf("%d", svc.DesiredCount), fmt.Sprintf("%d", svc.RunningCount), fmt.Sprintf("%d", svc.PendingCount), svc.TaskDef}
+			return table.Row{svc.Name, theme.RenderStatus(svc.Status), fmt.Sprintf("%d", svc.DesiredCount), fmt.Sprintf("%d", svc.RunningCount), fmt.Sprintf("%d", svc.PendingCount), svc.TaskDef}
 		},
 		CopyIDFunc:  func(svc awsecs.ECSService) string { return svc.Name },
 		CopyARNFunc: func(svc awsecs.ECSService) string { return svc.ARN },
@@ -111,7 +112,13 @@ func NewECSServiceSubMenuView(client *awsclient.ServiceClient, clusterName, serv
 }
 
 func (v *ECSServiceSubMenuView) Title() string { return v.serviceName }
-func (v *ECSServiceSubMenuView) Init() tea.Cmd  { return nil }
+
+func (v *ECSServiceSubMenuView) HelpContext() *HelpContext {
+	ctx := HelpContextRoot
+	return &ctx
+}
+
+func (v *ECSServiceSubMenuView) Init() tea.Cmd { return nil }
 func (v *ECSServiceSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -166,7 +173,7 @@ func NewECSTasksView(client *awsclient.ServiceClient, clusterName, serviceName s
 			return client.ECS.ListTasks(ctx, clusterName, serviceName)
 		},
 		RowMapper: func(t awsecs.ECSTask) table.Row {
-			return table.Row{t.TaskID, t.Status, t.TaskDef, utils.TimeOrDash(t.StartedAt, utils.DateTime), t.HealthStatus}
+			return table.Row{t.TaskID, theme.RenderStatus(t.Status), t.TaskDef, utils.TimeOrDash(t.StartedAt, utils.DateTime), theme.RenderStatus(t.HealthStatus)}
 		},
 		CopyIDFunc:  func(t awsecs.ECSTask) string { return t.TaskID },
 		CopyARNFunc: func(t awsecs.ECSTask) string { return t.ARN },
@@ -200,7 +207,7 @@ func NewECSDeploymentsView(client *awsclient.ServiceClient, clusterName, service
 			return detail.Deployments, nil
 		},
 		RowMapper: func(d awsecs.ECSDeployment) table.Row {
-			return table.Row{d.ID, d.Status, d.TaskDef, fmt.Sprintf("%d", d.DesiredCount), fmt.Sprintf("%d", d.RunningCount), fmt.Sprintf("%d", d.PendingCount), d.RolloutState, utils.TimeOrDash(d.CreatedAt, utils.DateTime)}
+			return table.Row{d.ID, theme.RenderStatus(d.Status), d.TaskDef, fmt.Sprintf("%d", d.DesiredCount), fmt.Sprintf("%d", d.RunningCount), fmt.Sprintf("%d", d.PendingCount), theme.RenderStatus(d.RolloutState), utils.TimeOrDash(d.CreatedAt, utils.DateTime)}
 		},
 		CopyIDFunc: func(d awsecs.ECSDeployment) string { return d.ID },
 	})

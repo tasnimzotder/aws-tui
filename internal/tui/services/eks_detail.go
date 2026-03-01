@@ -55,12 +55,11 @@ type EKSClusterDetailView struct {
 	nodeConditions string
 
 	// Tabs
-	activeTab int
-	tabNames  []string
-	tabViews  []View // lazily initialized, one per tab
+	tabs *TabController
 
-	// Namespace filtering (for K8s tabs 4-6)
+	// Namespace filtering (for K8s tabs 4-8)
 	namespace          string
+	lastNamespace      string
 	showNamespacePicker bool
 	namespacePicker    list.Model
 
@@ -79,22 +78,38 @@ type EKSClusterDetailView struct {
 
 // NewEKSClusterDetailView creates a new cluster detail view with dashboard and tabs.
 func NewEKSClusterDetailView(client *awsclient.ServiceClient, cluster awseks.EKSCluster, region string) *EKSClusterDetailView {
-	return &EKSClusterDetailView{
-		client:  client,
-		cluster: cluster,
-		region:  region,
-		tabNames: []string{
-			"Node Groups", "Add-ons", "Fargate", "Access",
-			"Pods", "Services", "Deployments", "Svc Accounts", "Ingresses",
-		},
-		tabViews:  make([]View, 9),
+	v := &EKSClusterDetailView{
+		client:    client,
+		cluster:   cluster,
+		region:    region,
 		pfManager: newPortForwardManager(),
 		loading:   true,
 		spinner:   theme.NewSpinner(),
 	}
+	v.tabs = NewTabController(
+		[]string{
+			"Node Groups", "Add-ons", "Fargate", "Access",
+			"Pods", "Services", "Deployments", "Svc Accounts", "Ingresses",
+		},
+		v.createTab,
+	)
+	v.tabs.BeforeSwitch = func(idx int) {
+		if idx >= 4 && v.lastNamespace != v.namespace {
+			for i := 4; i < len(v.tabs.TabViews); i++ {
+				v.tabs.TabViews[i] = nil
+			}
+			v.lastNamespace = v.namespace
+		}
+	}
+	return v
 }
 
 func (v *EKSClusterDetailView) Title() string { return v.cluster.Name }
+
+func (v *EKSClusterDetailView) HelpContext() *HelpContext {
+	ctx := HelpContextEKSDetail
+	return &ctx
+}
 
 func (v *EKSClusterDetailView) Init() tea.Cmd {
 	return tea.Batch(v.spinner.Tick, v.connectK8s())
@@ -174,29 +189,56 @@ func (v *EKSClusterDetailView) fetchNamespaces() tea.Cmd {
 	}
 }
 
+func (v *EKSClusterDetailView) createTab(idx int) View {
+	switch idx {
+	case 0:
+		return NewEKSNodeGroupsTableView(v.client, v.cluster.Name, v.k8sClient)
+	case 1:
+		return NewEKSAddonsTableView(v.client, v.cluster.Name)
+	case 2:
+		return NewEKSFargateTableView(v.client, v.cluster.Name)
+	case 3:
+		return NewEKSAccessEntriesTableView(v.client, v.cluster.Name)
+	case 4:
+		if v.k8sClient != nil {
+			return NewK8sPodsTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
+		}
+		return newEKSK8sPlaceholderView("Pods", v.k8sReady)
+	case 5:
+		if v.k8sClient != nil {
+			return NewK8sServicesTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
+		}
+		return newEKSK8sPlaceholderView("Services", v.k8sReady)
+	case 6:
+		if v.k8sClient != nil {
+			return NewK8sDeploymentsTableView(v.k8sClient, v.namespace)
+		}
+		return newEKSK8sPlaceholderView("Deployments", v.k8sReady)
+	case 7:
+		if v.k8sClient != nil {
+			return NewK8sServiceAccountsTableView(v.k8sClient, v.namespace)
+		}
+		return newEKSK8sPlaceholderView("Svc Accounts", v.k8sReady)
+	case 8:
+		if v.k8sClient != nil {
+			return NewK8sIngressesTableView(v.k8sClient, v.namespace, v.pfManager)
+		}
+		return newEKSK8sPlaceholderView("Ingresses", v.k8sReady)
+	}
+	return nil
+}
+
 // reinitK8sTab forces re-creation of the current K8s tab with the current namespace.
 func (v *EKSClusterDetailView) reinitK8sTab() tea.Cmd {
-	idx := v.activeTab
+	idx := v.tabs.ActiveTab
 	if idx < 4 || v.k8sClient == nil {
 		return nil
 	}
-	// Force re-creation by clearing the slot
-	v.tabViews[idx] = nil
-	switch idx {
-	case 4:
-		v.tabViews[idx] = NewK8sPodsTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
-	case 5:
-		v.tabViews[idx] = NewK8sServicesTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
-	case 6:
-		v.tabViews[idx] = NewK8sDeploymentsTableView(v.k8sClient, v.namespace)
-	case 7:
-		v.tabViews[idx] = NewK8sServiceAccountsTableView(v.k8sClient, v.namespace)
-	case 8:
-		v.tabViews[idx] = NewK8sIngressesTableView(v.k8sClient, v.namespace, v.pfManager)
-	}
-	v.resizeActiveTab()
-	if v.tabViews[idx] != nil {
-		return v.tabViews[idx].Init()
+	v.tabs.TabViews[idx] = nil
+	v.tabs.TabViews[idx] = v.createTab(idx)
+	v.tabs.ResizeActive(v.width, v.contentHeight())
+	if v.tabs.TabViews[idx] != nil {
+		return v.tabs.TabViews[idx].Init()
 	}
 	return nil
 }
@@ -252,90 +294,47 @@ func (v *EKSClusterDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.k8sReady = true
 		v.loading = false
 		// Reinit tab 0 (node groups) now that k8sClient is available
-		v.tabViews[0] = nil
-		v.initTab(0)
-		v.resizeActiveTab()
-		if v.tabViews[0] != nil {
-			cmd := v.tabViews[0].Init()
-			return v, cmd
-		}
-		return v, nil
+		v.tabs.TabViews[0] = nil
+		cmd := v.tabs.SwitchTab(0)
+		v.tabs.ResizeActive(v.width, v.contentHeight())
+		return v, cmd
 
 	case eksK8sErrorMsg:
 		v.err = msg.err
 		v.loading = false
 		// Still allow browsing AWS-side tabs even if K8s connection failed
-		v.initTab(0)
-		if v.tabViews[0] != nil {
-			cmd := v.tabViews[0].Init()
-			return v, cmd
-		}
-		return v, nil
+		cmd := v.tabs.SwitchTab(0)
+		v.tabs.ResizeActive(v.width, v.contentHeight())
+		return v, cmd
 
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "tab":
-			return v, v.switchTab((v.activeTab + 1) % len(v.tabNames))
-		case "shift+tab":
-			next := v.activeTab - 1
-			if next < 0 {
-				next = len(v.tabNames) - 1
-			}
-			return v, v.switchTab(next)
-		case "1":
-			return v, v.switchTab(0)
-		case "2":
-			return v, v.switchTab(1)
-		case "3":
-			return v, v.switchTab(2)
-		case "4":
-			return v, v.switchTab(3)
-		case "5":
-			return v, v.switchTab(4)
-		case "6":
-			return v, v.switchTab(5)
-		case "7":
-			return v, v.switchTab(6)
-		case "8":
-			return v, v.switchTab(7)
-		case "9":
-			return v, v.switchTab(8)
+		key := msg.String()
+		if handled, cmd := v.tabs.HandleKey(key); handled {
+			v.tabs.ResizeActive(v.width, v.contentHeight())
+			return v, cmd
+		}
+		switch key {
 		case "N":
-			// Namespace toggle: only on K8s tabs (4, 5, 6)
-			if v.activeTab >= 4 && v.k8sClient != nil {
+			if v.tabs.ActiveTab >= 4 && v.k8sClient != nil {
 				if v.namespace != "" {
-					// Clear namespace filter
 					v.namespace = ""
-					// Also clear other K8s tabs so they reinit with new namespace
-					for i := 4; i <= 8; i++ {
-						if i != v.activeTab {
-							v.tabViews[i] = nil
+					v.lastNamespace = ""
+					for i := 4; i < len(v.tabs.TabViews); i++ {
+						if i != v.tabs.ActiveTab {
+							v.tabs.TabViews[i] = nil
 						}
 					}
 					return v, v.reinitK8sTab()
 				}
-				// Fetch namespaces and show picker
 				return v, v.fetchNamespaces()
 			}
-			// Fall through to delegate
-			if v.tabViews[v.activeTab] != nil {
-				updated, cmd := v.tabViews[v.activeTab].Update(msg)
-				v.tabViews[v.activeTab] = updated
-				return v, cmd
-			}
-		default:
-			// Delegate to active tab view
-			if v.tabViews[v.activeTab] != nil {
-				updated, cmd := v.tabViews[v.activeTab].Update(msg)
-				v.tabViews[v.activeTab] = updated
-				return v, cmd
-			}
 		}
+		return v, v.tabs.DelegateUpdate(msg)
 
 	case tea.WindowSizeMsg:
 		v.width = msg.Width
 		v.height = msg.Height
-		v.resizeActiveTab()
+		v.tabs.ResizeActive(v.width, v.contentHeight())
 		return v, nil
 
 	case spinner.TickMsg:
@@ -344,103 +343,19 @@ func (v *EKSClusterDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 			v.spinner, cmd = v.spinner.Update(msg)
 			return v, cmd
 		}
-		// Delegate spinner ticks to active tab (it may have its own spinner)
-		if v.tabViews[v.activeTab] != nil {
-			updated, cmd := v.tabViews[v.activeTab].Update(msg)
-			v.tabViews[v.activeTab] = updated
-			return v, cmd
-		}
-		return v, nil
+		return v, v.tabs.DelegateUpdate(msg)
 
 	default:
-		// Delegate all other messages to active tab view
-		if v.tabViews[v.activeTab] != nil {
-			updated, cmd := v.tabViews[v.activeTab].Update(msg)
-			v.tabViews[v.activeTab] = updated
-			return v, cmd
-		}
-	}
-
-	return v, nil
-}
-
-func (v *EKSClusterDetailView) switchTab(idx int) tea.Cmd {
-	v.activeTab = idx
-	// When switching to a K8s tab, ensure it uses the current namespace.
-	// Clear stale K8s tab views that may have been created with a different namespace.
-	if idx >= 4 && v.tabViews[idx] != nil {
-		// Force reinit if needed (namespace may have changed since last init)
-		v.tabViews[idx] = nil
-	}
-	v.initTab(idx)
-	v.resizeActiveTab()
-	if v.tabViews[idx] != nil {
-		return v.tabViews[idx].Init()
-	}
-	return nil
-}
-
-func (v *EKSClusterDetailView) initTab(idx int) {
-	if v.tabViews[idx] != nil {
-		return
-	}
-	switch idx {
-	case 0:
-		v.tabViews[idx] = NewEKSNodeGroupsTableView(v.client, v.cluster.Name, v.k8sClient)
-	case 1:
-		v.tabViews[idx] = NewEKSAddonsTableView(v.client, v.cluster.Name)
-	case 2:
-		v.tabViews[idx] = NewEKSFargateTableView(v.client, v.cluster.Name)
-	case 3:
-		v.tabViews[idx] = NewEKSAccessEntriesTableView(v.client, v.cluster.Name)
-	case 4:
-		if v.k8sClient != nil {
-			v.tabViews[idx] = NewK8sPodsTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
-		} else {
-			v.tabViews[idx] = newEKSK8sPlaceholderView("Pods", v.k8sReady)
-		}
-	case 5:
-		if v.k8sClient != nil {
-			v.tabViews[idx] = NewK8sServicesTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
-		} else {
-			v.tabViews[idx] = newEKSK8sPlaceholderView("Services", v.k8sReady)
-		}
-	case 6:
-		if v.k8sClient != nil {
-			v.tabViews[idx] = NewK8sDeploymentsTableView(v.k8sClient, v.namespace)
-		} else {
-			v.tabViews[idx] = newEKSK8sPlaceholderView("Deployments", v.k8sReady)
-		}
-	case 7:
-		if v.k8sClient != nil {
-			v.tabViews[idx] = NewK8sServiceAccountsTableView(v.k8sClient, v.namespace)
-		} else {
-			v.tabViews[idx] = newEKSK8sPlaceholderView("Svc Accounts", v.k8sReady)
-		}
-	case 8:
-		if v.k8sClient != nil {
-			v.tabViews[idx] = NewK8sIngressesTableView(v.k8sClient, v.namespace, v.pfManager)
-		} else {
-			v.tabViews[idx] = newEKSK8sPlaceholderView("Ingresses", v.k8sReady)
-		}
+		return v, v.tabs.DelegateUpdate(msg)
 	}
 }
 
-func (v *EKSClusterDetailView) resizeActiveTab() {
-	if v.tabViews[v.activeTab] == nil {
-		return
-	}
-	if rv, ok := v.tabViews[v.activeTab].(ResizableView); ok {
-		contentHeight := v.contentHeight()
-		rv.SetSize(v.width, contentHeight)
-	}
-}
 
 // contentHeight calculates the height available for the tab content area.
 // Dashboard box takes ~6 lines, tab bar takes ~2 lines, namespace line ~1 line on K8s tabs.
 func (v *EKSClusterDetailView) contentHeight() int {
 	h := v.height - 8 // dashboard (6) + tab bar (2)
-	if v.activeTab >= 4 {
+	if v.tabs.ActiveTab >= 4 {
 		h-- // namespace indicator line
 	}
 	if h < 3 {
@@ -452,14 +367,10 @@ func (v *EKSClusterDetailView) contentHeight() int {
 func (v *EKSClusterDetailView) View() string {
 	var sections []string
 
-	// 1. Dashboard box
 	sections = append(sections, v.renderDashboard())
+	sections = append(sections, v.tabs.RenderTabBar())
 
-	// 2. Tab bar
-	sections = append(sections, v.renderTabBar())
-
-	// 3. Namespace indicator (only on K8s tabs)
-	if v.activeTab >= 4 {
+	if v.tabs.ActiveTab >= 4 {
 		nsText := "All"
 		nsStyle := theme.MutedStyle
 		if v.namespace != "" {
@@ -469,11 +380,10 @@ func (v *EKSClusterDetailView) View() string {
 		sections = append(sections, nsStyle.Render("Namespace: "+nsText))
 	}
 
-	// 4. Namespace picker overlay or tab content
 	if v.showNamespacePicker {
 		sections = append(sections, v.namespacePicker.View())
-	} else if v.tabViews[v.activeTab] != nil {
-		sections = append(sections, v.tabViews[v.activeTab].View())
+	} else if av := v.tabs.ActiveView(); av != nil {
+		sections = append(sections, av.View())
 	} else if v.loading {
 		sections = append(sections, v.spinner.View()+" Connecting to cluster...")
 	} else {
@@ -485,25 +395,26 @@ func (v *EKSClusterDetailView) View() string {
 
 func (v *EKSClusterDetailView) renderDashboard() string {
 	cl := v.cluster
+	label := theme.MutedStyle
 
-	// Status dot color
-	statusDot := v.statusDot(cl.Status)
+	// Title: cluster name + status badge
+	title := theme.DashboardTitleStyle.Render(cl.Name) + "  " + theme.RenderStatus(cl.Status)
 
-	// Info lines
-	line1 := fmt.Sprintf("K8s: %s  Platform: %s  Region: %s", cl.Version, cl.PlatformVersion, v.region)
+	line1 := label.Render("K8s: ") + cl.Version +
+		label.Render("  Platform: ") + cl.PlatformVersion +
+		label.Render("  Region: ") + v.region
 
 	var line2 string
 	if v.loading {
-		line2 = "Nodes: connecting..."
+		line2 = label.Render("Nodes: ") + theme.MutedStyle.Render("connecting...")
 	} else if v.err != nil && !v.k8sReady {
-		line2 = fmt.Sprintf("Nodes: error (%s)", v.err.Error())
+		line2 = label.Render("Nodes: ") + theme.ErrorStyle.Render(v.err.Error())
 	} else {
-		line2 = fmt.Sprintf("Nodes: %s", v.nodeHealth)
+		line2 = label.Render("Nodes: ") + v.nodeHealth
 	}
 
-	var line3 string
-	if v.k8sReady {
-		line3 = fmt.Sprintf("  %s", v.nodeConditions)
+	if v.k8sReady && v.nodeConditions != "" {
+		line2 += "  " + v.nodeConditions
 	}
 
 	endpoint := "Private"
@@ -513,63 +424,22 @@ func (v *EKSClusterDetailView) renderDashboard() string {
 	if cl.EndpointPublic && cl.EndpointPrivate {
 		endpoint = "Public + Private"
 	}
-	line4 := fmt.Sprintf("Endpoint: %s  Created: %s", endpoint, utils.TimeOrDash(cl.CreatedAt, utils.DateOnly))
+	line3 := label.Render("Endpoint: ") + endpoint +
+		label.Render("  Created: ") + utils.TimeOrDash(cl.CreatedAt, utils.DateOnly)
 
-	content := line1 + "\n" + line2
-	if line3 != "" {
-		content += "\n" + line3
-	}
-	content += "\n" + line4
-
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Primary).
-		Padding(0, 1)
-
+	boxStyle := theme.DashboardBoxStyle
 	if v.width > 0 {
-		boxStyle = boxStyle.Width(v.width - 4) // account for border + padding
+		boxStyle = boxStyle.Width(v.width - 4)
 	}
 
-	// Render title and content
-	titleStyle := lipgloss.NewStyle().Bold(true)
-	statusStyle := lipgloss.NewStyle().Bold(true)
-
-	header := titleStyle.Render(cl.Name) + "  " + statusStyle.Render(statusDot+" "+cl.Status)
-	return boxStyle.Render(header + "\n" + content)
-}
-
-func (v *EKSClusterDetailView) statusDot(status string) string {
-	switch strings.ToUpper(status) {
-	case "ACTIVE":
-		return lipgloss.NewStyle().Foreground(theme.Success).Render("●")
-	case "UPDATING", "CREATING":
-		return lipgloss.NewStyle().Foreground(theme.Warning).Render("●")
-	case "FAILED", "DELETING":
-		return lipgloss.NewStyle().Foreground(theme.Error).Render("●")
-	default:
-		return lipgloss.NewStyle().Foreground(theme.Muted).Render("●")
-	}
-}
-
-func (v *EKSClusterDetailView) renderTabBar() string {
-	var tabs []string
-	for i, name := range v.tabNames {
-		label := fmt.Sprintf("%d:%s", i+1, name)
-		if i == v.activeTab {
-			tabs = append(tabs, theme.TabActiveStyle.Render(label))
-		} else {
-			tabs = append(tabs, theme.TabInactiveStyle.Render(label))
-		}
-	}
-	bar := strings.Join(tabs, "")
-	return theme.TabBarStyle.Render(bar)
+	return boxStyle.Render(title + "\n" + line1 + "\n" + line2 + "\n" + line3)
 }
 
 // SetSize implements ResizableView.
 func (v *EKSClusterDetailView) SetSize(width, height int) {
 	v.width = width
 	v.height = height
-	v.resizeActiveTab()
+	v.tabs.ResizeActive(v.width, v.contentHeight())
 }
 
 // --- K8s placeholder view for tabs 4-6 ---
@@ -617,7 +487,7 @@ func NewEKSNodeGroupsTableView(client *awsclient.ServiceClient, clusterName stri
 		RowMapper: func(ng awseks.EKSNodeGroup) table.Row {
 			return table.Row{
 				ng.Name,
-				ng.Status,
+				theme.RenderStatus(ng.Status),
 				strings.Join(ng.InstanceTypes, ", "),
 				ng.AMIType,
 				fmt.Sprintf("%d", ng.DesiredSize),
@@ -650,7 +520,7 @@ func NewEKSAddonsTableView(client *awsclient.ServiceClient, clusterName string) 
 			return client.EKS.ListAddons(ctx, clusterName)
 		},
 		RowMapper: func(a awseks.EKSAddon) table.Row {
-			return table.Row{a.Name, a.Version, a.Status, a.Health}
+			return table.Row{a.Name, a.Version, theme.RenderStatus(a.Status), a.Health}
 		},
 		CopyIDFunc:  func(a awseks.EKSAddon) string { return a.Name },
 		CopyARNFunc: func(a awseks.EKSAddon) string { return a.ARN },
@@ -677,7 +547,7 @@ func NewEKSFargateTableView(client *awsclient.ServiceClient, clusterName string)
 			for _, s := range fp.Selectors {
 				sels = append(sels, s.Namespace)
 			}
-			return table.Row{fp.Name, fp.Status, strings.Join(sels, ", ")}
+			return table.Row{fp.Name, theme.RenderStatus(fp.Status), strings.Join(sels, ", ")}
 		},
 		CopyIDFunc:  func(fp awseks.EKSFargateProfile) string { return fp.Name },
 		CopyARNFunc: func(fp awseks.EKSFargateProfile) string { return fp.ARN },

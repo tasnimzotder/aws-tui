@@ -43,6 +43,12 @@ type ResizableView interface {
 	SetSize(width, height int)
 }
 
+// RefreshableView is implemented by views that support auto-refresh.
+type RefreshableView interface {
+	View
+	Refresh() tea.Cmd
+}
+
 // errViewMsg is a shared message for async error reporting.
 type errViewMsg struct{ err error }
 

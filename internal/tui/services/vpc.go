@@ -10,10 +10,6 @@ import (
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awsvpc "tasnim.dev/aws-tui/internal/aws/vpc"
@@ -41,7 +37,7 @@ func NewVPCListView(client *awsclient.ServiceClient) *TableView[awsvpc.VPCInfo] 
 			if vpc.IsDefault {
 				def = "Yes"
 			}
-			return table.Row{vpc.VPCID, vpc.Name, vpc.CIDR, def, vpc.State}
+			return table.Row{vpc.VPCID, vpc.Name, vpc.CIDR, def, theme.RenderStatus(vpc.State)}
 		},
 		CopyIDFunc: func(vpc awsvpc.VPCInfo) string { return vpc.VPCID },
 		OnEnter: func(vpc awsvpc.VPCInfo) tea.Cmd {
@@ -114,7 +110,7 @@ func NewIGWView(client *awsclient.ServiceClient, vpcID string) *TableView[awsvpc
 			return client.VPC.ListInternetGateways(ctx, vpcID)
 		},
 		RowMapper: func(igw awsvpc.InternetGatewayInfo) table.Row {
-			return table.Row{igw.GatewayID, igw.Name, igw.State}
+			return table.Row{igw.GatewayID, igw.Name, theme.RenderStatus(igw.State)}
 		},
 		CopyIDFunc: func(igw awsvpc.InternetGatewayInfo) string { return igw.GatewayID },
 	})
@@ -138,7 +134,7 @@ func NewVPCEndpointsView(client *awsclient.ServiceClient, vpcID string) *TableVi
 			return client.VPC.ListVPCEndpoints(ctx, vpcID)
 		},
 		RowMapper: func(ep awsvpc.VPCEndpointInfo) table.Row {
-			return table.Row{ep.EndpointID, ep.ServiceName, ep.Type, ep.State,
+			return table.Row{ep.EndpointID, ep.ServiceName, ep.Type, theme.RenderStatus(ep.State),
 				fmt.Sprintf("%d", len(ep.SubnetIDs)),
 				fmt.Sprintf("%d", len(ep.RouteTableIDs))}
 		},
@@ -165,7 +161,7 @@ func NewVPCPeeringView(client *awsclient.ServiceClient, vpcID string) *TableView
 			return client.VPC.ListVPCPeering(ctx, vpcID)
 		},
 		RowMapper: func(p awsvpc.VPCPeeringInfo) table.Row {
-			return table.Row{p.PeeringID, p.Name, p.Status,
+			return table.Row{p.PeeringID, p.Name, theme.RenderStatus(p.Status),
 				p.RequesterVPC, p.RequesterCIDR,
 				p.AccepterVPC, p.AccepterCIDR}
 		},
@@ -224,7 +220,7 @@ func NewFlowLogsView(client *awsclient.ServiceClient, vpcID string) *TableView[a
 			return client.VPC.ListFlowLogs(ctx, vpcID)
 		},
 		RowMapper: func(fl awsvpc.FlowLogInfo) table.Row {
-			return table.Row{fl.FlowLogID, fl.Status, fl.TrafficType, fl.LogDestination}
+			return table.Row{fl.FlowLogID, theme.RenderStatus(fl.Status), fl.TrafficType, fl.LogDestination}
 		},
 		CopyIDFunc: func(fl awsvpc.FlowLogInfo) string { return fl.FlowLogID },
 	})
@@ -234,7 +230,7 @@ func NewFlowLogsView(client *awsclient.ServiceClient, vpcID string) *TableView[a
 
 // vpcTagsMsg carries fetched tags.
 type vpcTagsMsg struct {
-	tags []types.Tag
+	tags map[string]string
 }
 
 // vpcTagsErrMsg signals an error fetching tags.
@@ -246,7 +242,7 @@ type vpcTagsErrMsg struct {
 type VPCTagsView struct {
 	client   *awsclient.ServiceClient
 	vpcID    string
-	tags     []types.Tag
+	tags     map[string]string
 	loaded   bool
 	err      error
 	viewport viewport.Model
@@ -329,19 +325,8 @@ func (v *VPCTagsView) initViewport() {
 	if h < 1 {
 		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(
-		viewport.WithWidth(w),
-		viewport.WithHeight(h),
-	)
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 
@@ -353,16 +338,15 @@ func (v *VPCTagsView) renderContent() string {
 		return "No tags"
 	}
 
-	// Sort tags by key
-	sorted := make([]types.Tag, len(v.tags))
-	copy(sorted, v.tags)
-	sort.Slice(sorted, func(i, j int) bool {
-		return aws.ToString(sorted[i].Key) < aws.ToString(sorted[j].Key)
-	})
+	keys := make([]string, 0, len(v.tags))
+	for k := range v.tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 
 	var b strings.Builder
-	for _, tag := range sorted {
-		fmt.Fprintf(&b, "%s = %s\n", aws.ToString(tag.Key), aws.ToString(tag.Value))
+	for _, k := range keys {
+		fmt.Fprintf(&b, "%s = %s\n", k, v.tags[k])
 	}
 	return b.String()
 }

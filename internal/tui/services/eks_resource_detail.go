@@ -57,19 +57,8 @@ func (v *EKSNodeGroupDetailView) initViewport() {
 	if h < 1 {
 		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(
-		viewport.WithWidth(w),
-		viewport.WithHeight(h),
-	)
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 
@@ -207,19 +196,8 @@ func (v *EKSAddonDetailView) initViewport() {
 	if h < 1 {
 		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(
-		viewport.WithWidth(w),
-		viewport.WithHeight(h),
-	)
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 
@@ -334,19 +312,8 @@ func (v *EKSFargateDetailView) initViewport() {
 	if h < 1 {
 		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(
-		viewport.WithWidth(w),
-		viewport.WithHeight(h),
-	)
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 
@@ -473,19 +440,8 @@ func (v *EKSAccessEntryDetailView) initViewport() {
 	if h < 1 {
 		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(
-		viewport.WithWidth(w),
-		viewport.WithHeight(h),
-	)
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 

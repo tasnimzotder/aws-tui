@@ -72,6 +72,11 @@ func (v *TaskDetailView) Title() string {
 	return "Task"
 }
 
+func (v *TaskDetailView) HelpContext() *HelpContext {
+	ctx := HelpContextDetail
+	return &ctx
+}
+
 func (v *TaskDetailView) Init() tea.Cmd {
 	return tea.Batch(v.spinner.Tick, v.fetchData())
 }

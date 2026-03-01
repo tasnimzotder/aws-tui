@@ -51,6 +51,11 @@ func NewRootView(client *awsclient.ServiceClient, profile, region string) *RootV
 
 func (v *RootView) Title() string { return "Services" }
 
+func (v *RootView) HelpContext() *HelpContext {
+	ctx := HelpContextRoot
+	return &ctx
+}
+
 func (v *RootView) Init() tea.Cmd { return nil }
 
 func (v *RootView) Update(msg tea.Msg) (View, tea.Cmd) {

@@ -41,7 +41,7 @@ func NewServicesCmd() *cobra.Command {
 				return fmt.Errorf("initializing AWS client: %w", err)
 			}
 
-			model := services.NewModel(client, profile, region)
+			model := services.NewModel(client, profile, region, cfg)
 			p := tea.NewProgram(model)
 			if _, err := p.Run(); err != nil {
 				fmt.Fprintln(os.Stderr, err)

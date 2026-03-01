@@ -314,17 +314,7 @@ func (c *Client) ListSecurityGroupRules(ctx context.Context, groupID string) ([]
 				direction = "outbound"
 			}
 
-			protocol := aws.ToString(r.IpProtocol)
-			switch protocol {
-			case "-1":
-				protocol = "All"
-			case "6":
-				protocol = "TCP"
-			case "17":
-				protocol = "UDP"
-			case "1":
-				protocol = "ICMP"
-			}
+			protocol := NormalizeProtocol(aws.ToString(r.IpProtocol))
 
 			portRange := "All"
 			fromPort := aws.ToInt32(r.FromPort)
@@ -548,17 +538,7 @@ func (c *Client) ListNetworkACLEntries(ctx context.Context, naclID string) ([]Ne
 			direction = "outbound"
 		}
 
-		protocol := aws.ToString(e.Protocol)
-		switch protocol {
-		case "-1":
-			protocol = "All"
-		case "6":
-			protocol = "TCP"
-		case "17":
-			protocol = "UDP"
-		case "1":
-			protocol = "ICMP"
-		}
+		protocol := NormalizeProtocol(aws.ToString(e.Protocol))
 
 		portRange := "All"
 		if e.PortRange != nil {
@@ -623,7 +603,7 @@ func (c *Client) ListFlowLogs(ctx context.Context, vpcID string) ([]FlowLogInfo,
 	return flowLogs, nil
 }
 
-func (c *Client) GetVPCTags(ctx context.Context, vpcID string) ([]types.Tag, error) {
+func (c *Client) GetVPCTags(ctx context.Context, vpcID string) (map[string]string, error) {
 	out, err := c.api.DescribeVpcs(ctx, &awsec2.DescribeVpcsInput{
 		VpcIds: []string{vpcID},
 	})
@@ -633,5 +613,9 @@ func (c *Client) GetVPCTags(ctx context.Context, vpcID string) ([]types.Tag, err
 	if len(out.Vpcs) == 0 {
 		return nil, nil
 	}
-	return out.Vpcs[0].Tags, nil
+	tags := make(map[string]string, len(out.Vpcs[0].Tags))
+	for _, t := range out.Vpcs[0].Tags {
+		tags[aws.ToString(t.Key)] = aws.ToString(t.Value)
+	}
+	return tags, nil
 }

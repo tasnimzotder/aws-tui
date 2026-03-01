@@ -1,6 +1,9 @@
 package theme
 
 import (
+	"image/color"
+	"strings"
+
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
 	"charm.land/lipgloss/v2"
@@ -90,7 +93,46 @@ var (
 
 	HelpDescStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#D1D5DB"))
+
+	DashboardBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(Primary).
+				Padding(0, 1)
+
+	DashboardTitleStyle = lipgloss.NewStyle().
+				Bold(true)
+
+	StatusBarStyle = lipgloss.NewStyle().
+				Padding(0, 1)
+
+	LoadingStyle = lipgloss.NewStyle().
+				Foreground(Muted).
+				PaddingLeft(2)
 )
+
+// StatusColor maps common AWS resource statuses to theme colors.
+func StatusColor(status string) color.Color {
+	switch strings.ToLower(status) {
+	case "running", "active", "available", "in-service", "healthy",
+		"create_complete", "update_complete", "attached":
+		return Success
+	case "stopped", "terminated", "failed", "unhealthy", "error",
+		"delete_failed", "create_failed", "detached":
+		return Error
+	case "pending", "stopping", "creating", "updating", "draining",
+		"modifying", "delete_in_progress", "provisioning", "in-progress":
+		return Warning
+	default:
+		return Muted
+	}
+}
+
+// RenderStatus renders a status string with a colored bullet.
+func RenderStatus(status string) string {
+	c := StatusColor(status)
+	bullet := lipgloss.NewStyle().Foreground(c).Render("●")
+	return bullet + " " + status
+}
 
 // DefaultTableStyles returns styled table styles using theme colors.
 func DefaultTableStyles() table.Styles {
@@ -115,7 +157,7 @@ func SpinnerStyle() lipgloss.Style {
 // NewSpinner returns a new spinner with the theme style.
 func NewSpinner() spinner.Model {
 	return spinner.New(
-		spinner.WithSpinner(spinner.Dot),
+		spinner.WithSpinner(spinner.MiniDot),
 		spinner.WithStyle(SpinnerStyle()),
 	)
 }

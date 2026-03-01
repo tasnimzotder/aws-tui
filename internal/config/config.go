@@ -4,14 +4,28 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config holds optional defaults loaded from ~/.config/aws-tui/config.yaml.
 type Config struct {
-	DefaultProfile string `yaml:"default_profile"`
-	DefaultRegion  string `yaml:"default_region"`
+	DefaultProfile      string `yaml:"default_profile"`
+	DefaultRegion       string `yaml:"default_region"`
+	AutoRefreshInterval int    `yaml:"auto_refresh_interval"`
+}
+
+// RefreshInterval returns the auto-refresh duration, with a minimum of 5s and default of 15s.
+func (c *Config) RefreshInterval() time.Duration {
+	s := c.AutoRefreshInterval
+	if s <= 0 {
+		s = 15
+	}
+	if s < 5 {
+		s = 5
+	}
+	return time.Duration(s) * time.Second
 }
 
 // Load reads the config file. Returns zero-value Config if the file doesn't exist.

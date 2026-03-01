@@ -716,7 +716,7 @@ func TestListFlowLogs(t *testing.T) {
 	}
 }
 
-func TestGetVPCTags(t *testing.T) {
+func TestGetVPCTags_ReturnsMap(t *testing.T) {
 	mock := &mockVPCAPI{
 		describeVpcsFunc: func(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error) {
 			return &awsec2.DescribeVpcsOutput{
@@ -741,10 +741,132 @@ func TestGetVPCTags(t *testing.T) {
 	if len(tags) != 2 {
 		t.Fatalf("expected 2 tags, got %d", len(tags))
 	}
-	if awssdk.ToString(tags[0].Key) != "Name" {
-		t.Errorf("tags[0].Key = %s, want Name", awssdk.ToString(tags[0].Key))
+	if tags["Name"] != "prod-vpc" {
+		t.Errorf("tags[Name] = %s, want prod-vpc", tags["Name"])
 	}
-	if awssdk.ToString(tags[1].Value) != "production" {
-		t.Errorf("tags[1].Value = %s, want production", awssdk.ToString(tags[1].Value))
+	if tags["Environment"] != "production" {
+		t.Errorf("tags[Environment] = %s, want production", tags["Environment"])
+	}
+}
+
+func TestListSubnets(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeSubnetsFunc: func(ctx context.Context, params *awsec2.DescribeSubnetsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSubnetsOutput, error) {
+			return &awsec2.DescribeSubnetsOutput{
+				Subnets: []types.Subnet{
+					{
+						SubnetId:                awssdk.String("subnet-abc123"),
+						CidrBlock:               awssdk.String("10.0.1.0/24"),
+						AvailabilityZone:        awssdk.String("us-east-1a"),
+						AvailableIpAddressCount: awssdk.Int32(250),
+						Tags: []types.Tag{
+							{Key: awssdk.String("Name"), Value: awssdk.String("public-a")},
+						},
+					},
+					{
+						SubnetId:                awssdk.String("subnet-def456"),
+						CidrBlock:               awssdk.String("10.0.2.0/24"),
+						AvailabilityZone:        awssdk.String("us-east-1b"),
+						AvailableIpAddressCount: awssdk.Int32(100),
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	subnets, err := client.ListSubnets(context.Background(), "vpc-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(subnets) != 2 {
+		t.Fatalf("expected 2 subnets, got %d", len(subnets))
+	}
+	if subnets[0].SubnetID != "subnet-abc123" {
+		t.Errorf("SubnetID = %s, want subnet-abc123", subnets[0].SubnetID)
+	}
+	if subnets[0].Name != "public-a" {
+		t.Errorf("Name = %s, want public-a", subnets[0].Name)
+	}
+	if subnets[0].CIDR != "10.0.1.0/24" {
+		t.Errorf("CIDR = %s, want 10.0.1.0/24", subnets[0].CIDR)
+	}
+	if subnets[0].AZ != "us-east-1a" {
+		t.Errorf("AZ = %s, want us-east-1a", subnets[0].AZ)
+	}
+	if subnets[0].AvailableIPs != 250 {
+		t.Errorf("AvailableIPs = %d, want 250", subnets[0].AvailableIPs)
+	}
+	if subnets[1].Name != "" {
+		t.Errorf("expected empty name for subnet without Name tag, got %s", subnets[1].Name)
+	}
+}
+
+func TestListSecurityGroups(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeSecurityGroupsFunc: func(ctx context.Context, params *awsec2.DescribeSecurityGroupsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupsOutput, error) {
+			return &awsec2.DescribeSecurityGroupsOutput{
+				SecurityGroups: []types.SecurityGroup{
+					{
+						GroupId:     awssdk.String("sg-abc123"),
+						GroupName:   awssdk.String("web-sg"),
+						Description: awssdk.String("Web security group"),
+						IpPermissions: []types.IpPermission{
+							{IpProtocol: awssdk.String("tcp"), FromPort: awssdk.Int32(80), ToPort: awssdk.Int32(80)},
+							{IpProtocol: awssdk.String("tcp"), FromPort: awssdk.Int32(443), ToPort: awssdk.Int32(443)},
+						},
+						IpPermissionsEgress: []types.IpPermission{
+							{IpProtocol: awssdk.String("-1")},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	sgs, err := client.ListSecurityGroups(context.Background(), "vpc-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sgs) != 1 {
+		t.Fatalf("expected 1 security group, got %d", len(sgs))
+	}
+	sg := sgs[0]
+	if sg.GroupID != "sg-abc123" {
+		t.Errorf("GroupID = %s, want sg-abc123", sg.GroupID)
+	}
+	if sg.Name != "web-sg" {
+		t.Errorf("Name = %s, want web-sg", sg.Name)
+	}
+	if sg.Description != "Web security group" {
+		t.Errorf("Description = %s, want Web security group", sg.Description)
+	}
+	if sg.InboundRules != 2 {
+		t.Errorf("InboundRules = %d, want 2", sg.InboundRules)
+	}
+	if sg.OutboundRules != 1 {
+		t.Errorf("OutboundRules = %d, want 1", sg.OutboundRules)
+	}
+}
+
+func TestGetVPCTags_Empty(t *testing.T) {
+	mock := &mockVPCAPI{
+		describeVpcsFunc: func(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error) {
+			return &awsec2.DescribeVpcsOutput{
+				Vpcs: []types.Vpc{
+					{VpcId: awssdk.String("vpc-empty")},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	tags, err := client.GetVPCTags(context.Background(), "vpc-empty")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tags) != 0 {
+		t.Fatalf("expected 0 tags, got %d", len(tags))
 	}
 }

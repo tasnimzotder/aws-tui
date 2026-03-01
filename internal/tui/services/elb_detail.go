@@ -14,21 +14,12 @@ import (
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awselb "tasnim.dev/aws-tui/internal/aws/elb"
-	awsvpc "tasnim.dev/aws-tui/internal/aws/vpc"
 	"tasnim.dev/aws-tui/internal/tui/theme"
 )
 
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
-
-type elbNavigateVPCMsg struct {
-	vpc awsvpc.VPCInfo
-}
-
-type elbNavigateVPCErrMsg struct {
-	err error
-}
 
 type elbHealthSummaryMsg struct {
 	healthy   int
@@ -43,27 +34,42 @@ type ELBDetailView struct {
 	client *awsclient.ServiceClient
 	lb     awselb.ELBLoadBalancer
 
-	activeTab int
-	tabNames  []string
-	tabViews  []View
+	tabs *TabController
 
 	healthy   int
 	unhealthy int
 	healthOK  bool
 
-	spinner spinner.Model
-	width   int
-	height  int
+	width  int
+	height int
 }
 
 func NewELBDetailView(client *awsclient.ServiceClient, lb awselb.ELBLoadBalancer) *ELBDetailView {
-	return &ELBDetailView{
-		client:   client,
-		lb:       lb,
-		tabNames: []string{"Listeners", "Target Groups", "Rules", "Attributes", "Tags"},
-		tabViews: make([]View, 5),
-		spinner:  theme.NewSpinner(),
+	v := &ELBDetailView{
+		client: client,
+		lb:     lb,
 	}
+	v.tabs = NewTabController(
+		[]string{"Listeners", "Target Groups", "Rules", "Attributes", "Tags"},
+		v.createTab,
+	)
+	return v
+}
+
+func (v *ELBDetailView) createTab(idx int) View {
+	switch idx {
+	case 0:
+		return newELBListenersTab(v.client, v.lb.ARN)
+	case 1:
+		return newELBTargetGroupsTab(v.client, v.lb.ARN)
+	case 2:
+		return newELBAllRulesTab(v.client, v.lb.ARN)
+	case 3:
+		return newELBAttributesTab(v.client, v.lb.ARN)
+	case 4:
+		return newELBTagsTab(v.client, v.lb.ARN)
+	}
+	return nil
 }
 
 func (v *ELBDetailView) Title() string { return v.lb.Name }
@@ -74,13 +80,9 @@ func (v *ELBDetailView) HelpContext() *HelpContext {
 }
 
 func (v *ELBDetailView) Init() tea.Cmd {
-	v.initTab(0)
-	var cmds []tea.Cmd
-	if v.tabViews[0] != nil {
-		cmds = append(cmds, v.tabViews[0].Init())
-	}
-	cmds = append(cmds, v.fetchHealthSummary())
-	return tea.Batch(cmds...)
+	cmd := v.tabs.SwitchTab(0)
+	v.tabs.ResizeActive(v.width, v.contentHeight())
+	return tea.Batch(cmd, v.fetchHealthSummary())
 }
 
 func (v *ELBDetailView) fetchHealthSummary() tea.Cmd {
@@ -102,10 +104,10 @@ func (v *ELBDetailView) fetchHealthSummary() tea.Cmd {
 
 func (v *ELBDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
-	case elbNavigateVPCMsg:
+	case navigateVPCMsg:
 		return v, pushView(NewVPCDetailView(v.client, msg.vpc))
 
-	case elbNavigateVPCErrMsg:
+	case navigateVPCErrMsg:
 		return v, nil
 
 	case elbHealthSummaryMsg:
@@ -115,113 +117,27 @@ func (v *ELBDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 		return v, nil
 
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "tab":
-			return v, v.switchTab((v.activeTab + 1) % len(v.tabNames))
-		case "shift+tab":
-			next := v.activeTab - 1
-			if next < 0 {
-				next = len(v.tabNames) - 1
-			}
-			return v, v.switchTab(next)
-		case "1":
-			return v, v.switchTab(0)
-		case "2":
-			return v, v.switchTab(1)
-		case "3":
-			return v, v.switchTab(2)
-		case "4":
-			return v, v.switchTab(3)
-		case "5":
-			return v, v.switchTab(4)
+		key := msg.String()
+		if handled, cmd := v.tabs.HandleKey(key); handled {
+			v.tabs.ResizeActive(v.width, v.contentHeight())
+			return v, cmd
+		}
+		switch key {
 		case "v":
 			if v.lb.VPCID != "" {
-				return v, v.navigateToVPC()
-			}
-		default:
-			if v.tabViews[v.activeTab] != nil {
-				updated, cmd := v.tabViews[v.activeTab].Update(msg)
-				v.tabViews[v.activeTab] = updated
-				return v, cmd
+				return v, NavigateToVPC(v.client.VPC, v.lb.VPCID)
 			}
 		}
+		return v, v.tabs.DelegateUpdate(msg)
 
 	case tea.WindowSizeMsg:
 		v.width = msg.Width
 		v.height = msg.Height
-		v.resizeActiveTab()
-		return v, nil
-
-	case spinner.TickMsg:
-		if v.tabViews[v.activeTab] != nil {
-			updated, cmd := v.tabViews[v.activeTab].Update(msg)
-			v.tabViews[v.activeTab] = updated
-			return v, cmd
-		}
+		v.tabs.ResizeActive(v.width, v.contentHeight())
 		return v, nil
 
 	default:
-		if v.tabViews[v.activeTab] != nil {
-			updated, cmd := v.tabViews[v.activeTab].Update(msg)
-			v.tabViews[v.activeTab] = updated
-			return v, cmd
-		}
-	}
-
-	return v, nil
-}
-
-func (v *ELBDetailView) navigateToVPC() tea.Cmd {
-	client := v.client
-	vpcID := v.lb.VPCID
-	return func() tea.Msg {
-		vpcs, err := client.VPC.ListVPCs(context.Background())
-		if err != nil {
-			return elbNavigateVPCErrMsg{err: err}
-		}
-		for _, vpc := range vpcs {
-			if vpc.VPCID == vpcID {
-				return elbNavigateVPCMsg{vpc: vpc}
-			}
-		}
-		return elbNavigateVPCErrMsg{err: fmt.Errorf("VPC %s not found", vpcID)}
-	}
-}
-
-func (v *ELBDetailView) switchTab(idx int) tea.Cmd {
-	v.activeTab = idx
-	v.initTab(idx)
-	v.resizeActiveTab()
-	if v.tabViews[idx] != nil {
-		return v.tabViews[idx].Init()
-	}
-	return nil
-}
-
-func (v *ELBDetailView) initTab(idx int) {
-	if v.tabViews[idx] != nil {
-		return
-	}
-	switch idx {
-	case 0:
-		v.tabViews[idx] = newELBListenersTab(v.client, v.lb.ARN)
-	case 1:
-		v.tabViews[idx] = newELBTargetGroupsTab(v.client, v.lb.ARN)
-	case 2:
-		v.tabViews[idx] = newELBAllRulesTab(v.client, v.lb.ARN)
-	case 3:
-		v.tabViews[idx] = newELBAttributesTab(v.client, v.lb.ARN)
-	case 4:
-		v.tabViews[idx] = newELBTagsTab(v.client, v.lb.ARN)
-	}
-}
-
-func (v *ELBDetailView) resizeActiveTab() {
-	if v.tabViews[v.activeTab] == nil {
-		return
-	}
-	if rv, ok := v.tabViews[v.activeTab].(ResizableView); ok {
-		rv.SetSize(v.width, v.contentHeight())
+		return v, v.tabs.DelegateUpdate(msg)
 	}
 }
 
@@ -236,10 +152,10 @@ func (v *ELBDetailView) contentHeight() int {
 func (v *ELBDetailView) View() string {
 	var sections []string
 	sections = append(sections, v.renderDashboard())
-	sections = append(sections, v.renderTabBar())
+	sections = append(sections, v.tabs.RenderTabBar())
 
-	if v.tabViews[v.activeTab] != nil {
-		sections = append(sections, v.tabViews[v.activeTab].View())
+	if av := v.tabs.ActiveView(); av != nil {
+		sections = append(sections, av.View())
 	} else {
 		sections = append(sections, theme.MutedStyle.Render("No data"))
 	}
@@ -249,70 +165,46 @@ func (v *ELBDetailView) View() string {
 
 func (v *ELBDetailView) renderDashboard() string {
 	lb := v.lb
+	label := theme.MutedStyle
 
-	stateStyle := theme.MutedStyle
-	stateIcon := "●"
-	if lb.State == "active" {
-		stateStyle = theme.SuccessStyle
-	}
+	// Title: Name + type badge + status badge
+	title := theme.DashboardTitleStyle.Render(lb.Name) +
+		"  " + theme.MutedStyle.Render("["+lb.Type+"]") +
+		"  " + theme.RenderStatus(lb.State)
 
-	line1 := fmt.Sprintf("%s  %s  %s",
-		lb.Name,
-		lb.Type,
-		stateStyle.Render(stateIcon+" "+lb.State))
+	line1 := label.Render("Scheme: ") + lb.Scheme + label.Render("  DNS: ") + lb.DNSName
 
-	line2 := fmt.Sprintf("Scheme: %s  DNS: %s", lb.Scheme, lb.DNSName)
-
-	line3Parts := []string{}
+	line2Parts := []string{}
 	if lb.VPCID != "" {
-		line3Parts = append(line3Parts, "VPC: "+lb.VPCID)
+		line2Parts = append(line2Parts, label.Render("VPC: ")+lb.VPCID)
 	}
 	if !lb.CreatedAt.IsZero() {
-		line3Parts = append(line3Parts, "Created: "+lb.CreatedAt.Format("2006-01-02"))
+		line2Parts = append(line2Parts, label.Render("Created: ")+lb.CreatedAt.Format("2006-01-02"))
 	}
-	line3 := strings.Join(line3Parts, "  ")
-
 	if v.healthOK {
-		healthStr := fmt.Sprintf("Healthy: %s  Unhealthy: %s",
-			theme.SuccessStyle.Render(fmt.Sprintf("%d", v.healthy)),
-			theme.ErrorStyle.Render(fmt.Sprintf("%d", v.unhealthy)))
-		line3 += "  " + healthStr
+		line2Parts = append(line2Parts,
+			label.Render("Healthy: ")+theme.SuccessStyle.Render(fmt.Sprintf("%d", v.healthy))+
+				label.Render("  Unhealthy: ")+theme.ErrorStyle.Render(fmt.Sprintf("%d", v.unhealthy)))
 	}
+	line2 := strings.Join(line2Parts, "  ")
 
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Primary).
-		Padding(0, 1)
-
+	boxStyle := theme.DashboardBoxStyle
 	if v.width > 0 {
 		boxStyle = boxStyle.Width(v.width - 4)
 	}
 
-	content := line1 + "\n" + line2
-	if line3 != "" {
-		content += "\n" + line3
+	content := title + "\n" + line1
+	if line2 != "" {
+		content += "\n" + line2
 	}
 
 	return boxStyle.Render(content)
 }
 
-func (v *ELBDetailView) renderTabBar() string {
-	var tabs []string
-	for i, name := range v.tabNames {
-		label := fmt.Sprintf("%d:%s", i+1, name)
-		if i == v.activeTab {
-			tabs = append(tabs, theme.TabActiveStyle.Render(label))
-		} else {
-			tabs = append(tabs, theme.TabInactiveStyle.Render(label))
-		}
-	}
-	return theme.TabBarStyle.Render(strings.Join(tabs, ""))
-}
-
 func (v *ELBDetailView) SetSize(width, height int) {
 	v.width = width
 	v.height = height
-	v.resizeActiveTab()
+	v.tabs.ResizeActive(v.width, v.contentHeight())
 }
 
 func (v *ELBDetailView) CopyID() string  { return v.lb.Name }
@@ -518,18 +410,10 @@ func (v *elbAttributesTab) Update(msg tea.Msg) (View, tea.Cmd) {
 func (v *elbAttributesTab) initViewport() {
 	h := v.height - 2
 	if h < 1 {
-		h = 10
+		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(viewport.WithWidth(w), viewport.WithHeight(h))
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 
@@ -676,18 +560,10 @@ func (v *elbTagsTab) Update(msg tea.Msg) (View, tea.Cmd) {
 func (v *elbTagsTab) initViewport() {
 	h := v.height - 2
 	if h < 1 {
-		h = 10
+		h = 1
 	}
-	w := v.width
-	if w < 20 {
-		w = 80
-	}
-	vp := viewport.New(viewport.WithWidth(w), viewport.WithHeight(h))
-	vp.MouseWheelEnabled = true
-	vp.SoftWrap = true
-	vp.Style = lipgloss.NewStyle().Padding(0, 1)
-	vp.SetContent(v.renderContent())
-	v.viewport = vp
+	v.viewport = NewStyledViewport(v.width, h)
+	v.viewport.SetContent(v.renderContent())
 	v.vpReady = true
 }
 

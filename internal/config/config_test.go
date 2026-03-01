@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,25 @@ func TestLoad_ValidFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "my-profile", cfg.DefaultProfile)
 	assert.Equal(t, "eu-west-1", cfg.DefaultRegion)
+}
+
+func TestConfig_AutoRefreshInterval(t *testing.T) {
+	data := []byte("auto_refresh_interval: 30\n")
+	var cfg Config
+	err := yaml.Unmarshal(data, &cfg)
+	require.NoError(t, err)
+	assert.Equal(t, 30, cfg.AutoRefreshInterval)
+	assert.Equal(t, 30*time.Second, cfg.RefreshInterval())
+}
+
+func TestConfig_DefaultAutoRefreshInterval(t *testing.T) {
+	cfg := &Config{}
+	assert.Equal(t, 15*time.Second, cfg.RefreshInterval())
+}
+
+func TestConfig_MinAutoRefreshInterval(t *testing.T) {
+	cfg := &Config{AutoRefreshInterval: 2}
+	assert.Equal(t, 5*time.Second, cfg.RefreshInterval())
 }
 
 func TestMerge_CLIFlagsTakePrecedence(t *testing.T) {

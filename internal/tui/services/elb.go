@@ -9,6 +9,7 @@ import (
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awselb "tasnim.dev/aws-tui/internal/aws/elb"
+	"tasnim.dev/aws-tui/internal/tui/theme"
 )
 
 func NewELBLoadBalancersView(client *awsclient.ServiceClient) *TableView[awselb.ELBLoadBalancer] {
@@ -33,7 +34,7 @@ func NewELBLoadBalancersView(client *awsclient.ServiceClient) *TableView[awselb.
 			if !lb.CreatedAt.IsZero() {
 				created = lb.CreatedAt.Format("2006-01-02")
 			}
-			return table.Row{lb.Name, lb.Type, lb.State, lb.Scheme, lb.DNSName, lb.VPCID, created}
+			return table.Row{lb.Name, lb.Type, theme.RenderStatus(lb.State), lb.Scheme, lb.DNSName, lb.VPCID, created}
 		},
 		CopyIDFunc:  func(lb awselb.ELBLoadBalancer) string { return lb.Name },
 		CopyARNFunc: func(lb awselb.ELBLoadBalancer) string { return lb.ARN },

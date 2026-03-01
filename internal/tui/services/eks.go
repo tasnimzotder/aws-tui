@@ -8,6 +8,7 @@ import (
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
 	awseks "tasnim.dev/aws-tui/internal/aws/eks"
+	"tasnim.dev/aws-tui/internal/tui/theme"
 	"tasnim.dev/aws-tui/internal/utils"
 )
 
@@ -26,7 +27,7 @@ func NewEKSClustersView(client *awsclient.ServiceClient) *TableView[awseks.EKSCl
 			return client.EKS.ListClusters(ctx)
 		},
 		RowMapper: func(cl awseks.EKSCluster) table.Row {
-			return table.Row{cl.Name, cl.Status, cl.Version, cl.PlatformVersion, utils.TimeOrDash(cl.CreatedAt, utils.DateOnly)}
+			return table.Row{cl.Name, theme.RenderStatus(cl.Status), cl.Version, cl.PlatformVersion, utils.TimeOrDash(cl.CreatedAt, utils.DateOnly)}
 		},
 		CopyIDFunc:  func(cl awseks.EKSCluster) string { return cl.Name },
 		CopyARNFunc: func(cl awseks.EKSCluster) string { return cl.ARN },

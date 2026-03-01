@@ -40,7 +40,7 @@ func NewEC2View(client *awsclient.ServiceClient, profile, region string) *TableV
 		},
 		RowMapper: func(item ec2ViewItem) table.Row {
 			i := item.instance
-			return table.Row{i.Name, i.InstanceID, i.Type, i.State, i.AZ, i.Architecture, i.PrivateIP, i.PublicIP}
+			return table.Row{i.Name, i.InstanceID, i.Type, theme.RenderStatus(i.State), i.AZ, i.Architecture, i.PrivateIP, i.PublicIP}
 		},
 		CopyIDFunc: func(item ec2ViewItem) string {
 			return item.instance.InstanceID

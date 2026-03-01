@@ -156,6 +156,11 @@ func isCodeFile(ext string) bool {
 
 func (tv *TextView) Title() string { return tv.title }
 
+func (tv *TextView) HelpContext() *HelpContext {
+	ctx := HelpContextTextView
+	return &ctx
+}
+
 func (tv *TextView) Init() tea.Cmd {
 	if tv.isBinary {
 		return nil

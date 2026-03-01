@@ -72,6 +72,11 @@ func (v *EKSLogView) Title() string {
 	return fmt.Sprintf("Logs: %s/%s", v.pod.Name, v.container)
 }
 
+func (v *EKSLogView) HelpContext() *HelpContext {
+	ctx := HelpContextK8sLogs
+	return &ctx
+}
+
 func (v *EKSLogView) Init() tea.Cmd {
 	h := v.height - 4
 	if h < 1 {

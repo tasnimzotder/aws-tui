@@ -11,10 +11,15 @@ import (
 	"charm.land/lipgloss/v2"
 
 	awsclient "tasnim.dev/aws-tui/internal/aws"
+	"tasnim.dev/aws-tui/internal/config"
 	"tasnim.dev/aws-tui/internal/tui/theme"
 )
 
 type clearCopiedMsg struct{}
+
+// Auto-refresh messages
+type autoRefreshTickMsg struct{ gen int }
+type autoRefreshTriggerMsg struct{}
 
 // Model is the root Bubble Tea model for the services browser.
 type Model struct {
@@ -40,10 +45,16 @@ type Model struct {
 
 	// Quit confirmation
 	confirmQuit bool
+
+	// Auto-refresh
+	autoRefresh     bool
+	autoRefreshGen  int
+	refreshInterval time.Duration
+	nextRefreshAt   time.Time
 }
 
 // NewModel creates a new services browser model.
-func NewModel(client *awsclient.ServiceClient, profile, region string) Model {
+func NewModel(client *awsclient.ServiceClient, profile, region string, cfg *config.Config) Model {
 	root := NewRootView(client, profile, region)
 
 	ti := textinput.New()
@@ -51,11 +62,12 @@ func NewModel(client *awsclient.ServiceClient, profile, region string) Model {
 	ti.CharLimit = 64
 
 	return Model{
-		client:      client,
-		profile:     profile,
-		region:      region,
-		stack:       []View{root},
-		filterInput: ti,
+		client:          client,
+		profile:         profile,
+		region:          region,
+		stack:           []View{root},
+		filterInput:     ti,
+		refreshInterval: cfg.RefreshInterval(),
 	}
 }
 
@@ -70,6 +82,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case clearCopiedMsg:
 		m.copiedText = ""
+		return m, nil
+
+	case autoRefreshTickMsg:
+		if !m.autoRefresh || msg.gen != m.autoRefreshGen {
+			return m, nil
+		}
+		if time.Now().After(m.nextRefreshAt) {
+			m.nextRefreshAt = time.Now().Add(m.refreshInterval)
+			return m, tea.Batch(
+				m.scheduleRefreshTick(),
+				func() tea.Msg { return autoRefreshTriggerMsg{} },
+			)
+		}
+		return m, m.scheduleRefreshTick()
+
+	case autoRefreshTriggerMsg:
+		if !m.autoRefresh || len(m.stack) == 0 {
+			return m, nil
+		}
+		if rv, ok := m.stack[len(m.stack)-1].(RefreshableView); ok {
+			return m, rv.Refresh()
+		}
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -150,6 +184,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		current := m.stack[len(m.stack)-1]
 		updated, cmd := current.Update(msg)
 		m.stack[len(m.stack)-1] = updated
+		// Re-apply filter after data updates (e.g. auto-refresh) to preserve filter state
+		if m.filterQuery != "" {
+			if fv, ok := updated.(FilterableView); ok {
+				m.applyFilter(fv)
+			}
+		}
 		return m, cmd
 	}
 
@@ -164,18 +204,7 @@ func (m Model) View() tea.View {
 	}
 	breadcrumb := renderBreadcrumb(titles)
 
-	// Profile and region info
-	profileText := "default"
-	if m.profile != "" {
-		profileText = m.profile
-	}
-	regionText := "default"
-	if m.region != "" {
-		regionText = m.region
-	}
-	info := theme.ProfileStyle.Render(fmt.Sprintf("profile: %s  region: %s", profileText, regionText))
-
-	header := lipgloss.JoinHorizontal(lipgloss.Top, breadcrumb, "   ", info)
+	header := theme.HeaderStyle.Render(breadcrumb)
 
 	// Filter bar
 	filterBar := ""
@@ -191,19 +220,44 @@ func (m Model) View() tea.View {
 		content = m.stack[len(m.stack)-1].View()
 	}
 
-	// Help / copy status
-	var help string
+	// Status bar: left = key hints / status, right = profile · region
+	var leftStatus string
 	if m.confirmQuit {
-		help = lipgloss.NewStyle().Foreground(theme.Warning).Bold(true).Render("Quit? (y/n)")
+		leftStatus = lipgloss.NewStyle().Foreground(theme.Warning).Bold(true).Render("Quit? (y/n)")
 	} else if m.copiedText != "" {
-		help = theme.CopiedStyle.Render(fmt.Sprintf("Copied: %s", m.copiedText))
+		leftStatus = theme.CopiedStyle.Render(fmt.Sprintf("Copied: %s", m.copiedText))
 	} else if m.filtering {
-		help = theme.HelpStyle.Render("Enter to lock filter • Esc to clear")
-	} else if len(m.stack) <= 1 {
-		help = theme.HelpStyle.Render("Enter to select • ? for help • q to quit")
+		leftStatus = theme.HelpStyle.Render("Enter to lock filter • Esc to clear")
 	} else {
-		help = theme.HelpStyle.Render("Esc back • r refresh • / filter • c copy • ? help • q quit")
+		ctx := HelpContextRoot
+		if len(m.stack) > 0 {
+			ctx = detectHelpContext(m.stack[len(m.stack)-1])
+		}
+		leftStatus = RenderKeyHints(ctx, m.width-8)
 	}
+
+	// Auto-refresh indicator
+	if m.autoRefresh {
+		remaining := time.Until(m.nextRefreshAt).Truncate(time.Second)
+		if remaining < 0 {
+			remaining = 0
+		}
+		leftStatus += "  " + theme.SuccessStyle.Render(fmt.Sprintf("⟳ %ds", int(remaining.Seconds())))
+	}
+
+	// Profile and region info (right side of status bar)
+	profileText := "default"
+	if m.profile != "" {
+		profileText = m.profile
+	}
+	regionText := "default"
+	if m.region != "" {
+		regionText = m.region
+	}
+	rightInfo := theme.MutedStyle.Render(fmt.Sprintf("%s · %s", profileText, regionText))
+
+	// Compose status bar with left and right sections
+	statusBar := m.renderStatusBar(leftStatus, rightInfo)
 
 	var screen string
 	if m.showHelp && len(m.stack) > 0 {
@@ -211,16 +265,30 @@ func (m Model) View() tea.View {
 		screen = renderHelp(ctx, m.width, m.height)
 	} else {
 		screen = theme.DashboardStyle.Render(
-			theme.HeaderStyle.Render(header) + "\n\n" +
+			header + "\n\n" +
 				filterBar +
 				content + "\n" +
-				help,
+				statusBar,
 		)
 	}
 
 	v := tea.NewView(screen)
 	v.AltScreen = true
 	return v
+}
+
+func (m Model) renderStatusBar(left, right string) string {
+	rightPlain := estimatePlainLen(right)
+	availableWidth := m.width - 6 - rightPlain // account for DashboardStyle padding
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+	leftPlain := estimatePlainLen(left)
+	gap := availableWidth - leftPlain
+	if gap < 1 {
+		gap = 1
+	}
+	return theme.StatusBarStyle.Render(left + strings.Repeat(" ", gap) + right)
 }
 
 func (m Model) updateFilterMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -295,6 +363,14 @@ func (m Model) updateNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.filterInput.Focus()
 			return m, textinput.Blink
 		}
+	case "a":
+		m.autoRefresh = !m.autoRefresh
+		if m.autoRefresh {
+			m.autoRefreshGen++
+			m.nextRefreshAt = time.Now().Add(m.refreshInterval)
+			return m, m.scheduleRefreshTick()
+		}
+		return m, nil
 	case "?":
 		m.showHelp = true
 		return m, nil
@@ -379,5 +455,12 @@ func (m Model) applyFilter(fv FilterableView) {
 func (m Model) clearCopiedAfter() tea.Cmd {
 	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
 		return clearCopiedMsg{}
+	})
+}
+
+func (m Model) scheduleRefreshTick() tea.Cmd {
+	gen := m.autoRefreshGen
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return autoRefreshTickMsg{gen: gen}
 	})
 }
