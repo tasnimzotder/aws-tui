@@ -12,7 +12,8 @@ import (
 	"tasnim.dev/aws-tui/internal/tui/theme"
 )
 
-func NewEC2View(client *awsclient.ServiceClient) *TableView[ec2ViewItem] {
+func NewEC2View(client *awsclient.ServiceClient, profile, region string) *TableView[ec2ViewItem] {
+	helpCtx := HelpContextEC2
 	return NewTableView(TableViewConfig[ec2ViewItem]{
 		Title:       "EC2",
 		LoadingText: "Loading EC2 instances...",
@@ -21,6 +22,8 @@ func NewEC2View(client *awsclient.ServiceClient) *TableView[ec2ViewItem] {
 			{Title: "Instance ID", Width: 22},
 			{Title: "Type", Width: 12},
 			{Title: "State", Width: 10},
+			{Title: "AZ", Width: 14},
+			{Title: "Arch", Width: 8},
 			{Title: "Private IP", Width: 16},
 			{Title: "Public IP", Width: 16},
 		},
@@ -37,7 +40,7 @@ func NewEC2View(client *awsclient.ServiceClient) *TableView[ec2ViewItem] {
 		},
 		RowMapper: func(item ec2ViewItem) table.Row {
 			i := item.instance
-			return table.Row{i.Name, i.InstanceID, i.Type, i.State, i.PrivateIP, i.PublicIP}
+			return table.Row{i.Name, i.InstanceID, i.Type, i.State, i.AZ, i.Architecture, i.PrivateIP, i.PublicIP}
 		},
 		CopyIDFunc: func(item ec2ViewItem) string {
 			return item.instance.InstanceID
@@ -54,6 +57,15 @@ func NewEC2View(client *awsclient.ServiceClient) *TableView[ec2ViewItem] {
 				theme.MutedStyle.Render("Total:"), theme.MutedStyle.Render(fmt.Sprintf("%d", s.Total)),
 			)
 		},
+		OnEnter: func(item ec2ViewItem) tea.Cmd {
+			return pushView(NewEC2DetailView(client, item.instance, profile, region))
+		},
+		KeyHandlers: map[string]func(ec2ViewItem) tea.Cmd{
+			"x": func(item ec2ViewItem) tea.Cmd {
+				return pushView(newSSMInputView(item.instance, profile, region))
+			},
+		},
+		HelpCtx:      &helpCtx,
 		HeightOffset: 3,
 	})
 }

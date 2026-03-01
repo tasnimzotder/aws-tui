@@ -44,7 +44,7 @@ type Model struct {
 
 // NewModel creates a new services browser model.
 func NewModel(client *awsclient.ServiceClient, profile, region string) Model {
-	root := NewRootView(client)
+	root := NewRootView(client, profile, region)
 
 	ti := textinput.New()
 	ti.Placeholder = "filter..."
@@ -133,6 +133,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				continue
 			}
 			if _, ok := top.(*ContainerPickerView); ok {
+				m.stack = m.stack[:len(m.stack)-1]
+				continue
+			}
+			if _, ok := top.(*ssmInputView); ok {
 				m.stack = m.stack[:len(m.stack)-1]
 				continue
 			}

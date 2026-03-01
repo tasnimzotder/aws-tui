@@ -17,11 +17,13 @@ func (i serviceItem) Description() string { return i.desc }
 func (i serviceItem) FilterValue() string { return i.name }
 
 type RootView struct {
-	client *awsclient.ServiceClient
-	list   list.Model
+	client  *awsclient.ServiceClient
+	profile string
+	region  string
+	list    list.Model
 }
 
-func NewRootView(client *awsclient.ServiceClient) *RootView {
+func NewRootView(client *awsclient.ServiceClient, profile, region string) *RootView {
 	items := []list.Item{
 		serviceItem{name: "EC2", desc: "Elastic Compute Cloud — Instances"},
 		serviceItem{name: "ECR", desc: "Elastic Container Registry — Repositories, Images"},
@@ -40,8 +42,10 @@ func NewRootView(client *awsclient.ServiceClient) *RootView {
 	l.SetFilteringEnabled(false)
 
 	return &RootView{
-		client: client,
-		list:   l,
+		client:  client,
+		profile: profile,
+		region:  region,
+		list:    l,
 	}
 }
 
@@ -71,7 +75,7 @@ func (v *RootView) handleSelection(name string) tea.Cmd {
 	switch name {
 	case "EC2":
 		return func() tea.Msg {
-			return PushViewMsg{View: NewEC2View(v.client)}
+			return PushViewMsg{View: NewEC2View(v.client, v.profile, v.region)}
 		}
 	case "ECS":
 		return func() tea.Msg {
