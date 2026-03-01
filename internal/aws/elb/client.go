@@ -17,6 +17,8 @@ type ELBAPI interface {
 	DescribeTargetGroups(ctx context.Context, params *elbv2.DescribeTargetGroupsInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTargetGroupsOutput, error)
 	DescribeTargetHealth(ctx context.Context, params *elbv2.DescribeTargetHealthInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTargetHealthOutput, error)
 	DescribeRules(ctx context.Context, params *elbv2.DescribeRulesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeRulesOutput, error)
+	DescribeLoadBalancerAttributes(ctx context.Context, params *elbv2.DescribeLoadBalancerAttributesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeLoadBalancerAttributesOutput, error)
+	DescribeTags(ctx context.Context, params *elbv2.DescribeTagsInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTagsOutput, error)
 }
 
 type Client struct {
@@ -82,11 +84,19 @@ func (c *Client) ListListeners(ctx context.Context, lbARN string) ([]ELBListener
 		}
 
 		for _, l := range out.Listeners {
+			var certs []string
+			for _, c := range l.Certificates {
+				if arn := aws.ToString(c.CertificateArn); arn != "" {
+					certs = append(certs, arn)
+				}
+			}
 			listeners = append(listeners, ELBListener{
 				ARN:           aws.ToString(l.ListenerArn),
 				Port:          int(aws.ToInt32(l.Port)),
 				Protocol:      string(l.Protocol),
 				DefaultAction: formatAction(l.DefaultActions),
+				SSLPolicy:     aws.ToString(l.SslPolicy),
+				Certificates:  certs,
 			})
 		}
 
@@ -197,6 +207,132 @@ func (c *Client) buildTargetGroup(ctx context.Context, tg elbtypes.TargetGroup) 
 		}
 	}
 	return item, nil
+}
+
+func (c *Client) ListListenerRules(ctx context.Context, listenerARN string) ([]ELBListenerRule, error) {
+	out, err := c.api.DescribeRules(ctx, &elbv2.DescribeRulesInput{
+		ListenerArn: aws.String(listenerARN),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DescribeRules: %w", err)
+	}
+
+	rules := make([]ELBListenerRule, 0, len(out.Rules))
+	for _, r := range out.Rules {
+		priority := aws.ToString(r.Priority)
+		isDefault := r.IsDefault != nil && *r.IsDefault
+
+		var conditions []string
+		for _, c := range r.Conditions {
+			field := aws.ToString(c.Field)
+			switch {
+			case c.HostHeaderConfig != nil && len(c.HostHeaderConfig.Values) > 0:
+				conditions = append(conditions, "host: "+joinStrings(c.HostHeaderConfig.Values))
+			case c.PathPatternConfig != nil && len(c.PathPatternConfig.Values) > 0:
+				conditions = append(conditions, "path: "+joinStrings(c.PathPatternConfig.Values))
+			case c.HttpRequestMethodConfig != nil && len(c.HttpRequestMethodConfig.Values) > 0:
+				conditions = append(conditions, "method: "+joinStrings(c.HttpRequestMethodConfig.Values))
+			case c.SourceIpConfig != nil && len(c.SourceIpConfig.Values) > 0:
+				conditions = append(conditions, "source-ip: "+joinStrings(c.SourceIpConfig.Values))
+			default:
+				if field != "" {
+					conditions = append(conditions, field)
+				}
+			}
+		}
+
+		var actions []string
+		for _, a := range r.Actions {
+			actions = append(actions, formatAction([]elbtypes.Action{a}))
+		}
+
+		rules = append(rules, ELBListenerRule{
+			ARN:        aws.ToString(r.RuleArn),
+			Priority:   priority,
+			Conditions: conditions,
+			Actions:    actions,
+			IsDefault:  isDefault,
+		})
+	}
+	return rules, nil
+}
+
+func (c *Client) ListTargets(ctx context.Context, targetGroupARN string) ([]ELBTarget, error) {
+	out, err := c.api.DescribeTargetHealth(ctx, &elbv2.DescribeTargetHealthInput{
+		TargetGroupArn: aws.String(targetGroupARN),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DescribeTargetHealth: %w", err)
+	}
+
+	targets := make([]ELBTarget, 0, len(out.TargetHealthDescriptions))
+	for _, th := range out.TargetHealthDescriptions {
+		t := ELBTarget{}
+		if th.Target != nil {
+			t.ID = aws.ToString(th.Target.Id)
+			t.Port = int(aws.ToInt32(th.Target.Port))
+			t.AZ = aws.ToString(th.Target.AvailabilityZone)
+		}
+		if th.TargetHealth != nil {
+			t.HealthState = string(th.TargetHealth.State)
+			t.HealthReason = string(th.TargetHealth.Reason)
+			t.HealthDesc = aws.ToString(th.TargetHealth.Description)
+		}
+		targets = append(targets, t)
+	}
+	return targets, nil
+}
+
+func (c *Client) GetLoadBalancerAttributes(ctx context.Context, lbARN string) ([]ELBAttribute, error) {
+	out, err := c.api.DescribeLoadBalancerAttributes(ctx, &elbv2.DescribeLoadBalancerAttributesInput{
+		LoadBalancerArn: aws.String(lbARN),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DescribeLoadBalancerAttributes: %w", err)
+	}
+
+	attrs := make([]ELBAttribute, 0, len(out.Attributes))
+	for _, a := range out.Attributes {
+		attrs = append(attrs, ELBAttribute{
+			Key:   aws.ToString(a.Key),
+			Value: aws.ToString(a.Value),
+		})
+	}
+	return attrs, nil
+}
+
+func (c *Client) GetResourceTags(ctx context.Context, arns []string) (map[string]map[string]string, error) {
+	out, err := c.api.DescribeTags(ctx, &elbv2.DescribeTagsInput{
+		ResourceArns: arns,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DescribeTags: %w", err)
+	}
+
+	result := make(map[string]map[string]string, len(out.TagDescriptions))
+	for _, td := range out.TagDescriptions {
+		arn := aws.ToString(td.ResourceArn)
+		tags := make(map[string]string, len(td.Tags))
+		for _, t := range td.Tags {
+			tags[aws.ToString(t.Key)] = aws.ToString(t.Value)
+		}
+		result[arn] = tags
+	}
+	return result, nil
+}
+
+func joinStrings(ss []string) string {
+	if len(ss) == 1 {
+		return ss[0]
+	}
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += ", "
+		}
+		result += s
+	}
+	return result
 }
 
 func formatAction(actions []elbtypes.Action) string {

@@ -18,6 +18,30 @@ type ELBListener struct {
 	Port          int
 	Protocol      string
 	DefaultAction string // "forward → tg-name" or "redirect → url" etc.
+	SSLPolicy     string
+	Certificates  []string // certificate ARNs
+}
+
+type ELBListenerRule struct {
+	ARN        string
+	Priority   string // "default" or numeric
+	Conditions []string
+	Actions    []string
+	IsDefault  bool
+}
+
+type ELBTarget struct {
+	ID           string
+	Port         int
+	AZ           string
+	HealthState  string
+	HealthReason string
+	HealthDesc   string
+}
+
+type ELBAttribute struct {
+	Key   string
+	Value string
 }
 
 type ELBTargetGroup struct {

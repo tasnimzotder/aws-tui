@@ -238,10 +238,11 @@ func (v *TaskDetailView) View() string {
 	tabs := []string{"Details", "Logs"}
 	var renderedTabs []string
 	for i, tab := range tabs {
+		label := fmt.Sprintf("%d:%s", i+1, tab)
 		if i == v.activeTab {
-			renderedTabs = append(renderedTabs, theme.TabActiveStyle.Render(tab))
+			renderedTabs = append(renderedTabs, theme.TabActiveStyle.Render(label))
 		} else {
-			renderedTabs = append(renderedTabs, theme.TabInactiveStyle.Render(tab))
+			renderedTabs = append(renderedTabs, theme.TabInactiveStyle.Render(label))
 		}
 	}
 	tabBar := theme.TabBarStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...))

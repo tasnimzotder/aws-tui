@@ -544,7 +544,7 @@ func (v *EKSClusterDetailView) statusDot(status string) string {
 func (v *EKSClusterDetailView) renderTabBar() string {
 	var tabs []string
 	for i, name := range v.tabNames {
-		label := fmt.Sprintf("[%s]", name)
+		label := fmt.Sprintf("%d:%s", i+1, name)
 		if i == v.activeTab {
 			tabs = append(tabs, theme.TabActiveStyle.Render(label))
 		} else {

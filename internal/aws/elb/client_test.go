@@ -14,11 +14,13 @@ import (
 )
 
 type mockELBAPI struct {
-	describeLoadBalancersFunc func(ctx context.Context, params *elbv2.DescribeLoadBalancersInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeLoadBalancersOutput, error)
-	describeListenersFunc     func(ctx context.Context, params *elbv2.DescribeListenersInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeListenersOutput, error)
-	describeTargetGroupsFunc  func(ctx context.Context, params *elbv2.DescribeTargetGroupsInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTargetGroupsOutput, error)
-	describeTargetHealthFunc  func(ctx context.Context, params *elbv2.DescribeTargetHealthInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTargetHealthOutput, error)
-	describeRulesFunc         func(ctx context.Context, params *elbv2.DescribeRulesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeRulesOutput, error)
+	describeLoadBalancersFunc          func(ctx context.Context, params *elbv2.DescribeLoadBalancersInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeLoadBalancersOutput, error)
+	describeListenersFunc              func(ctx context.Context, params *elbv2.DescribeListenersInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeListenersOutput, error)
+	describeTargetGroupsFunc           func(ctx context.Context, params *elbv2.DescribeTargetGroupsInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTargetGroupsOutput, error)
+	describeTargetHealthFunc           func(ctx context.Context, params *elbv2.DescribeTargetHealthInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTargetHealthOutput, error)
+	describeRulesFunc                  func(ctx context.Context, params *elbv2.DescribeRulesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeRulesOutput, error)
+	describeLoadBalancerAttributesFunc func(ctx context.Context, params *elbv2.DescribeLoadBalancerAttributesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeLoadBalancerAttributesOutput, error)
+	describeTagsFunc                   func(ctx context.Context, params *elbv2.DescribeTagsInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTagsOutput, error)
 }
 
 func (m *mockELBAPI) DescribeLoadBalancers(ctx context.Context, params *elbv2.DescribeLoadBalancersInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeLoadBalancersOutput, error) {
@@ -35,6 +37,12 @@ func (m *mockELBAPI) DescribeTargetHealth(ctx context.Context, params *elbv2.Des
 }
 func (m *mockELBAPI) DescribeRules(ctx context.Context, params *elbv2.DescribeRulesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeRulesOutput, error) {
 	return m.describeRulesFunc(ctx, params, optFns...)
+}
+func (m *mockELBAPI) DescribeLoadBalancerAttributes(ctx context.Context, params *elbv2.DescribeLoadBalancerAttributesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeLoadBalancerAttributesOutput, error) {
+	return m.describeLoadBalancerAttributesFunc(ctx, params, optFns...)
+}
+func (m *mockELBAPI) DescribeTags(ctx context.Context, params *elbv2.DescribeTagsInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTagsOutput, error) {
+	return m.describeTagsFunc(ctx, params, optFns...)
 }
 
 func TestListLoadBalancers(t *testing.T) {
@@ -111,6 +119,10 @@ func TestListListeners(t *testing.T) {
 						ListenerArn: awssdk.String("arn:aws:elasticloadbalancing:us-east-1:123456:listener/app/my-alb/abc123/def456"),
 						Port:        awssdk.Int32(443),
 						Protocol:    elbtypes.ProtocolEnumHttps,
+						SslPolicy:   awssdk.String("ELBSecurityPolicy-TLS13-1-2-2021-06"),
+						Certificates: []elbtypes.Certificate{
+							{CertificateArn: awssdk.String("arn:aws:acm:us-east-1:123456:certificate/abc-123")},
+						},
 						DefaultActions: []elbtypes.Action{
 							{
 								Type:           elbtypes.ActionTypeEnumForward,
@@ -132,6 +144,8 @@ func TestListListeners(t *testing.T) {
 	assert.Equal(t, 443, l.Port)
 	assert.Equal(t, "HTTPS", l.Protocol)
 	assert.Equal(t, "forward → my-tg", l.DefaultAction)
+	assert.Equal(t, "ELBSecurityPolicy-TLS13-1-2-2021-06", l.SSLPolicy)
+	assert.Equal(t, []string{"arn:aws:acm:us-east-1:123456:certificate/abc-123"}, l.Certificates)
 }
 
 func TestListTargetGroups(t *testing.T) {
@@ -253,4 +267,162 @@ func TestListListenerTargetGroups(t *testing.T) {
 	require.Len(t, tgs, 1)
 	assert.Equal(t, "my-tg", tgs[0].Name)
 	assert.Equal(t, 1, tgs[0].HealthyCount)
+}
+
+func TestListListenerRules(t *testing.T) {
+	isDefault := true
+	mock := &mockELBAPI{
+		describeRulesFunc: func(ctx context.Context, params *elbv2.DescribeRulesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeRulesOutput, error) {
+			return &elbv2.DescribeRulesOutput{
+				Rules: []elbtypes.Rule{
+					{
+						RuleArn:   awssdk.String("arn:rule-1"),
+						Priority:  awssdk.String("1"),
+						IsDefault: nil,
+						Conditions: []elbtypes.RuleCondition{
+							{
+								Field:            awssdk.String("host-header"),
+								HostHeaderConfig: &elbtypes.HostHeaderConditionConfig{Values: []string{"example.com"}},
+							},
+							{
+								Field:             awssdk.String("path-pattern"),
+								PathPatternConfig: &elbtypes.PathPatternConditionConfig{Values: []string{"/api/*"}},
+							},
+						},
+						Actions: []elbtypes.Action{
+							{
+								Type:           elbtypes.ActionTypeEnumForward,
+								TargetGroupArn: awssdk.String("arn:aws:elasticloadbalancing:us-east-1:123456:targetgroup/my-tg/abc123"),
+							},
+						},
+					},
+					{
+						RuleArn:   awssdk.String("arn:rule-default"),
+						Priority:  awssdk.String("default"),
+						IsDefault: &isDefault,
+						Actions: []elbtypes.Action{
+							{
+								Type: elbtypes.ActionTypeEnumFixedResponse,
+								FixedResponseConfig: &elbtypes.FixedResponseActionConfig{
+									StatusCode: awssdk.String("404"),
+								},
+							},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	rules, err := client.ListListenerRules(context.Background(), "arn:listener")
+	require.NoError(t, err)
+	require.Len(t, rules, 2)
+
+	r := rules[0]
+	assert.Equal(t, "1", r.Priority)
+	assert.False(t, r.IsDefault)
+	assert.Equal(t, []string{"host: example.com", "path: /api/*"}, r.Conditions)
+	assert.Equal(t, []string{"forward → my-tg"}, r.Actions)
+
+	rd := rules[1]
+	assert.Equal(t, "default", rd.Priority)
+	assert.True(t, rd.IsDefault)
+	assert.Equal(t, []string{"fixed-response 404"}, rd.Actions)
+}
+
+func TestListTargets(t *testing.T) {
+	mock := &mockELBAPI{
+		describeTargetHealthFunc: func(ctx context.Context, params *elbv2.DescribeTargetHealthInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTargetHealthOutput, error) {
+			return &elbv2.DescribeTargetHealthOutput{
+				TargetHealthDescriptions: []elbtypes.TargetHealthDescription{
+					{
+						Target: &elbtypes.TargetDescription{
+							Id:               awssdk.String("i-abc123"),
+							Port:             awssdk.Int32(8080),
+							AvailabilityZone: awssdk.String("us-east-1a"),
+						},
+						TargetHealth: &elbtypes.TargetHealth{
+							State:       elbtypes.TargetHealthStateEnumHealthy,
+							Description: awssdk.String("Health checks passed"),
+						},
+					},
+					{
+						Target: &elbtypes.TargetDescription{
+							Id:               awssdk.String("i-def456"),
+							Port:             awssdk.Int32(8080),
+							AvailabilityZone: awssdk.String("us-east-1b"),
+						},
+						TargetHealth: &elbtypes.TargetHealth{
+							State:       elbtypes.TargetHealthStateEnumUnhealthy,
+							Reason:      elbtypes.TargetHealthReasonEnumTimeout,
+							Description: awssdk.String("Request timed out"),
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	targets, err := client.ListTargets(context.Background(), "arn:tg")
+	require.NoError(t, err)
+	require.Len(t, targets, 2)
+
+	assert.Equal(t, "i-abc123", targets[0].ID)
+	assert.Equal(t, 8080, targets[0].Port)
+	assert.Equal(t, "us-east-1a", targets[0].AZ)
+	assert.Equal(t, "healthy", targets[0].HealthState)
+
+	assert.Equal(t, "i-def456", targets[1].ID)
+	assert.Equal(t, "unhealthy", targets[1].HealthState)
+	assert.Equal(t, "Target.Timeout", targets[1].HealthReason)
+	assert.Equal(t, "Request timed out", targets[1].HealthDesc)
+}
+
+func TestGetLoadBalancerAttributes(t *testing.T) {
+	mock := &mockELBAPI{
+		describeLoadBalancerAttributesFunc: func(ctx context.Context, params *elbv2.DescribeLoadBalancerAttributesInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeLoadBalancerAttributesOutput, error) {
+			return &elbv2.DescribeLoadBalancerAttributesOutput{
+				Attributes: []elbtypes.LoadBalancerAttribute{
+					{Key: awssdk.String("idle_timeout.timeout_seconds"), Value: awssdk.String("60")},
+					{Key: awssdk.String("deletion_protection.enabled"), Value: awssdk.String("true")},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	attrs, err := client.GetLoadBalancerAttributes(context.Background(), "arn:lb")
+	require.NoError(t, err)
+	require.Len(t, attrs, 2)
+	assert.Equal(t, "idle_timeout.timeout_seconds", attrs[0].Key)
+	assert.Equal(t, "60", attrs[0].Value)
+	assert.Equal(t, "deletion_protection.enabled", attrs[1].Key)
+	assert.Equal(t, "true", attrs[1].Value)
+}
+
+func TestGetResourceTags(t *testing.T) {
+	mock := &mockELBAPI{
+		describeTagsFunc: func(ctx context.Context, params *elbv2.DescribeTagsInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTagsOutput, error) {
+			return &elbv2.DescribeTagsOutput{
+				TagDescriptions: []elbtypes.TagDescription{
+					{
+						ResourceArn: awssdk.String("arn:lb-1"),
+						Tags: []elbtypes.Tag{
+							{Key: awssdk.String("Environment"), Value: awssdk.String("prod")},
+							{Key: awssdk.String("Team"), Value: awssdk.String("platform")},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	client := NewClient(mock)
+	tags, err := client.GetResourceTags(context.Background(), []string{"arn:lb-1"})
+	require.NoError(t, err)
+	require.Len(t, tags, 1)
+	assert.Equal(t, "prod", tags["arn:lb-1"]["Environment"])
+	assert.Equal(t, "platform", tags["arn:lb-1"]["Team"])
 }

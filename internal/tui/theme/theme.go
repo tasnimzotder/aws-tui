@@ -62,11 +62,11 @@ var (
 	TabActiveStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(Primary).
-			Padding(0, 2)
+			Padding(0, 1)
 
 	TabInactiveStyle = lipgloss.NewStyle().
 				Foreground(Muted).
-				Padding(0, 2)
+				Padding(0, 1)
 
 	TabBarStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).

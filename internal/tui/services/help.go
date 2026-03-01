@@ -23,6 +23,8 @@ const (
 	HelpContextK8sLogs
 	HelpContextEC2
 	HelpContextEC2Detail
+	HelpContextELB
+	HelpContextELBDetail
 )
 
 type helpBinding struct {
@@ -194,6 +196,35 @@ func renderHelp(ctx HelpContext, width, height int) string {
 			{"?", "Toggle this help"},
 			{"q", "Quit"},
 		}
+	case HelpContextELB:
+		title = "Keybindings — ELB"
+		bindings = []helpBinding{
+			{"Enter", "Load balancer detail"},
+			{"/", "Filter rows"},
+			{"n/p", "Next/prev page"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"C", "Copy ARN"},
+			{"j/k", "Navigate up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
+	case HelpContextELBDetail:
+		title = "Keybindings — ELB Detail"
+		bindings = []helpBinding{
+			{"Tab", "Next tab"},
+			{"Shift+Tab", "Prev tab"},
+			{"1-5", "Jump to tab"},
+			{"v", "Navigate to VPC"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"C", "Copy ARN"},
+			{"j/k", "Scroll up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
 	}
 
 	var b strings.Builder
@@ -235,6 +266,8 @@ func detectHelpContext(v View) HelpContext {
 		return HelpContextDetail
 	case *EC2DetailView:
 		return HelpContextEC2Detail
+	case *ELBDetailView:
+		return HelpContextELBDetail
 	case *ECSServiceSubMenuView:
 		return HelpContextRoot
 	case *IAMSubMenuView:

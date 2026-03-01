@@ -287,7 +287,7 @@ func (v *EC2DetailView) renderDashboard() string {
 func (v *EC2DetailView) renderTabBar() string {
 	var tabs []string
 	for i, name := range v.tabNames {
-		label := fmt.Sprintf("[%s]", name)
+		label := fmt.Sprintf("%d:%s", i+1, name)
 		if i == v.activeTab {
 			tabs = append(tabs, theme.TabActiveStyle.Render(label))
 		} else {
