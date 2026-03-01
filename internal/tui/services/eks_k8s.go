@@ -53,6 +53,16 @@ type K8sDeployment struct {
 	Strategy  string
 }
 
+// K8sServiceAccount represents a service account for TUI display.
+type K8sServiceAccount struct {
+	Namespace      string
+	Name           string
+	Secrets        int    // number of secret references
+	IAMRole        string // eks.amazonaws.com/role-arn annotation
+	AutomountToken string // "true"/"false"
+	Age            string
+}
+
 // K8sNode represents a node for TUI display.
 type K8sNode struct {
 	Name         string
@@ -201,6 +211,34 @@ func listDeployments(ctx context.Context, k8s *awseks.K8sClient, namespace strin
 		})
 	}
 	return deployments, nil
+}
+
+// listServiceAccounts fetches service accounts from K8s API.
+func listServiceAccounts(ctx context.Context, k8s *awseks.K8sClient, namespace string) ([]K8sServiceAccount, error) {
+	saList, err := k8s.Clientset.CoreV1().ServiceAccounts(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list service accounts: %w", err)
+	}
+
+	accounts := make([]K8sServiceAccount, 0, len(saList.Items))
+	for _, sa := range saList.Items {
+		iamRole := sa.Annotations["eks.amazonaws.com/role-arn"]
+
+		automount := "true"
+		if sa.AutomountServiceAccountToken != nil && !*sa.AutomountServiceAccountToken {
+			automount = "false"
+		}
+
+		accounts = append(accounts, K8sServiceAccount{
+			Namespace:      sa.Namespace,
+			Name:           sa.Name,
+			Secrets:        len(sa.Secrets),
+			IAMRole:        iamRole,
+			AutomountToken: automount,
+			Age:            formatAge(sa.CreationTimestamp.Time),
+		})
+	}
+	return accounts, nil
 }
 
 // listNodes fetches nodes from K8s API filtered by node group name.
@@ -464,6 +502,42 @@ func NewK8sDeploymentsTableView(k8s *awseks.K8sClient, namespace string) *TableV
 		},
 		OnEnter: func(d K8sDeployment) tea.Cmd {
 			return pushView(NewK8sDeploymentDetailView(k8s, d))
+		},
+	})
+}
+
+// NewK8sServiceAccountsTableView creates a table view for K8s service accounts.
+func NewK8sServiceAccountsTableView(k8s *awseks.K8sClient, namespace string) *TableView[K8sServiceAccount] {
+	return NewTableView(TableViewConfig[K8sServiceAccount]{
+		Title:       "Service Accounts",
+		LoadingText: "Loading service accounts...",
+		Columns: []table.Column{
+			{Title: "Namespace", Width: 16},
+			{Title: "Name", Width: 24},
+			{Title: "IAM Role", Width: 44},
+			{Title: "Secrets", Width: 8},
+			{Title: "Automount", Width: 10},
+			{Title: "Age", Width: 8},
+		},
+		FetchFunc: func(ctx context.Context) ([]K8sServiceAccount, error) {
+			return listServiceAccounts(ctx, k8s, namespace)
+		},
+		RowMapper: func(sa K8sServiceAccount) table.Row {
+			iamRole := sa.IAMRole
+			if iamRole == "" {
+				iamRole = "<none>"
+			}
+			return table.Row{sa.Namespace, sa.Name, iamRole,
+				fmt.Sprintf("%d", sa.Secrets), sa.AutomountToken, sa.Age}
+		},
+		CopyIDFunc: func(sa K8sServiceAccount) string { return sa.Namespace + "/" + sa.Name },
+		KeyHandlers: map[string]func(K8sServiceAccount) tea.Cmd{
+			"e": func(sa K8sServiceAccount) tea.Cmd {
+				return pushView(NewK8sServiceAccountYAMLView(k8s, sa))
+			},
+		},
+		OnEnter: func(sa K8sServiceAccount) tea.Cmd {
+			return pushView(NewK8sServiceAccountDetailView(k8s, sa))
 		},
 	})
 }

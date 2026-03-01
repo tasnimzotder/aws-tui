@@ -91,7 +91,7 @@ func (tv *TextView) highlight(text string) string {
 	}
 	lexer = chroma.Coalesce(lexer)
 
-	style := styles.Get("monokai")
+	style := styles.Get("github")
 	if style == nil {
 		style = styles.Fallback
 	}

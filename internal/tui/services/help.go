@@ -105,7 +105,7 @@ func renderHelp(ctx HelpContext, width, height int) string {
 		bindings = []helpBinding{
 			{"Tab", "Next tab"},
 			{"Shift+Tab", "Prev tab"},
-			{"1-7", "Jump to tab"},
+			{"1-8", "Jump to tab"},
 			{"N", "Change namespace (K8s tabs)"},
 			{"r", "Refresh data"},
 			{"c", "Copy ID"},

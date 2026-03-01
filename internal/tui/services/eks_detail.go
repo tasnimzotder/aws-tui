@@ -85,9 +85,9 @@ func NewEKSClusterDetailView(client *awsclient.ServiceClient, cluster awseks.EKS
 		region:  region,
 		tabNames: []string{
 			"Node Groups", "Add-ons", "Fargate", "Access",
-			"Pods", "Services", "Deployments",
+			"Pods", "Services", "Deployments", "Svc Accounts",
 		},
-		tabViews:  make([]View, 7),
+		tabViews:  make([]View, 8),
 		pfManager: newPortForwardManager(),
 		loading:   true,
 		spinner:   theme.NewSpinner(),
@@ -189,6 +189,8 @@ func (v *EKSClusterDetailView) reinitK8sTab() tea.Cmd {
 		v.tabViews[idx] = NewK8sServicesTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
 	case 6:
 		v.tabViews[idx] = NewK8sDeploymentsTableView(v.k8sClient, v.namespace)
+	case 7:
+		v.tabViews[idx] = NewK8sServiceAccountsTableView(v.k8sClient, v.namespace)
 	}
 	v.resizeActiveTab()
 	if v.tabViews[idx] != nil {
@@ -292,6 +294,8 @@ func (v *EKSClusterDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 			return v, v.switchTab(5)
 		case "7":
 			return v, v.switchTab(6)
+		case "8":
+			return v, v.switchTab(7)
 		case "N":
 			// Namespace toggle: only on K8s tabs (4, 5, 6)
 			if v.activeTab >= 4 && v.k8sClient != nil {
@@ -299,7 +303,7 @@ func (v *EKSClusterDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 					// Clear namespace filter
 					v.namespace = ""
 					// Also clear other K8s tabs so they reinit with new namespace
-					for i := 4; i <= 6; i++ {
+					for i := 4; i <= 7; i++ {
 						if i != v.activeTab {
 							v.tabViews[i] = nil
 						}
@@ -402,6 +406,12 @@ func (v *EKSClusterDetailView) initTab(idx int) {
 			v.tabViews[idx] = NewK8sDeploymentsTableView(v.k8sClient, v.namespace)
 		} else {
 			v.tabViews[idx] = newEKSK8sPlaceholderView("Deployments", v.k8sReady)
+		}
+	case 7:
+		if v.k8sClient != nil {
+			v.tabViews[idx] = NewK8sServiceAccountsTableView(v.k8sClient, v.namespace)
+		} else {
+			v.tabViews[idx] = newEKSK8sPlaceholderView("Svc Accounts", v.k8sReady)
 		}
 	}
 }

@@ -164,3 +164,9 @@ func NewK8sNodeYAMLView(k8s *awseks.K8sClient, node K8sNode) *K8sYAMLSpecView {
 		return k8s.Clientset.CoreV1().Nodes().Get(ctx, node.Name, metav1.GetOptions{})
 	})
 }
+
+func NewK8sServiceAccountYAMLView(k8s *awseks.K8sClient, sa K8sServiceAccount) *K8sYAMLSpecView {
+	return newK8sYAMLSpecView("YAML: "+sa.Name, func(ctx context.Context) (any, error) {
+		return k8s.Clientset.CoreV1().ServiceAccounts(sa.Namespace).Get(ctx, sa.Name, metav1.GetOptions{})
+	})
+}

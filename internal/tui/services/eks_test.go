@@ -36,11 +36,11 @@ func TestEKSClusterDetailView_TabNames(t *testing.T) {
 
 	expectedTabs := []string{
 		"Node Groups", "Add-ons", "Fargate", "Access",
-		"Pods", "Services", "Deployments",
+		"Pods", "Services", "Deployments", "Svc Accounts",
 	}
 
-	if len(v.tabNames) != 7 {
-		t.Fatalf("expected 7 tabs, got %d", len(v.tabNames))
+	if len(v.tabNames) != 8 {
+		t.Fatalf("expected 8 tabs, got %d", len(v.tabNames))
 	}
 
 	for i, name := range expectedTabs {
@@ -77,7 +77,7 @@ func TestEKSClusterDetailView_TabSwitch(t *testing.T) {
 	}
 
 	// Cycle through all tabs back to 0
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 6; i++ {
 		v.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	}
 	if v.activeTab != 0 {
