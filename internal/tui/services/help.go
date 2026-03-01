@@ -119,6 +119,7 @@ func renderHelp(ctx HelpContext, width, height int) string {
 		title = "Keybindings — K8s Pods"
 		bindings = []helpBinding{
 			{"Enter", "Pod details"},
+			{"e", "View YAML spec"},
 			{"x", "Exec into pod (prompts cmd)"},
 			{"l", "View pod logs"},
 			{"f", "Port forward"},
@@ -136,6 +137,7 @@ func renderHelp(ctx HelpContext, width, height int) string {
 		title = "Keybindings — K8s Nodes"
 		bindings = []helpBinding{
 			{"Enter", "Node details"},
+			{"e", "View YAML spec"},
 			{"x", "Debug exec into node"},
 			{"/", "Filter rows"},
 			{"n/p", "Next/prev page"},

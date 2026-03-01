@@ -308,6 +308,9 @@ func newK8sPodsTableView(k8s *awseks.K8sClient, namespace string, pfManager *por
 			}
 			return pushView(newExecInputView(k8s, p, ""))
 		},
+		"e": func(p K8sPod) tea.Cmd {
+			return pushView(NewK8sPodYAMLView(k8s, p))
+		},
 	}
 
 	if pfManager != nil {
@@ -358,12 +361,14 @@ func NewK8sServicesTableViewWithPF(k8s *awseks.K8sClient, namespace string, pfMa
 }
 
 func newK8sServicesTableView(k8s *awseks.K8sClient, namespace string, pfManager *portForwardManager) *TableView[K8sService] {
-	var keyHandlers map[string]func(K8sService) tea.Cmd
+	keyHandlers := map[string]func(K8sService) tea.Cmd{
+		"e": func(s K8sService) tea.Cmd {
+			return pushView(NewK8sServiceYAMLView(k8s, s))
+		},
+	}
 	if pfManager != nil {
-		keyHandlers = map[string]func(K8sService) tea.Cmd{
-			"F": func(_ K8sService) tea.Cmd {
-				return pushView(newPortForwardListView(pfManager))
-			},
+		keyHandlers["F"] = func(_ K8sService) tea.Cmd {
+			return pushView(newPortForwardListView(pfManager))
 		}
 	}
 
@@ -419,6 +424,9 @@ func NewK8sNodesTableView(k8s *awseks.K8sClient, nodeGroupName string) *TableVie
 			"x": func(n K8sNode) tea.Cmd {
 				return pushView(newNodeDebugInputView(k8s, n))
 			},
+			"e": func(n K8sNode) tea.Cmd {
+				return pushView(NewK8sNodeYAMLView(k8s, n))
+			},
 		},
 		HelpCtx: &nodesHelp,
 		OnEnter: func(n K8sNode) tea.Cmd {
@@ -449,6 +457,11 @@ func NewK8sDeploymentsTableView(k8s *awseks.K8sClient, namespace string) *TableV
 				fmt.Sprintf("%d", d.Available), d.Age}
 		},
 		CopyIDFunc: func(d K8sDeployment) string { return d.Namespace + "/" + d.Name },
+		KeyHandlers: map[string]func(K8sDeployment) tea.Cmd{
+			"e": func(d K8sDeployment) tea.Cmd {
+				return pushView(NewK8sDeploymentYAMLView(k8s, d))
+			},
+		},
 		OnEnter: func(d K8sDeployment) tea.Cmd {
 			return pushView(NewK8sDeploymentDetailView(k8s, d))
 		},
