@@ -247,8 +247,10 @@ func (v *EKSClusterDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.nodeConditions = msg.nodeConditions
 		v.k8sReady = true
 		v.loading = false
-		// Initialize first tab
+		// Reinit tab 0 (node groups) now that k8sClient is available
+		v.tabViews[0] = nil
 		v.initTab(0)
+		v.resizeActiveTab()
 		if v.tabViews[0] != nil {
 			cmd := v.tabViews[0].Init()
 			return v, cmd
@@ -376,7 +378,7 @@ func (v *EKSClusterDetailView) initTab(idx int) {
 	}
 	switch idx {
 	case 0:
-		v.tabViews[idx] = NewEKSNodeGroupsTableView(v.client, v.cluster.Name)
+		v.tabViews[idx] = NewEKSNodeGroupsTableView(v.client, v.cluster.Name, v.k8sClient)
 	case 1:
 		v.tabViews[idx] = NewEKSAddonsTableView(v.client, v.cluster.Name)
 	case 2:
@@ -576,7 +578,7 @@ func (p *eksK8sPlaceholderView) SetSize(width, height int) {}
 
 // --- EKS resource tab view constructors (stubs for tabs 0-3) ---
 
-func NewEKSNodeGroupsTableView(client *awsclient.ServiceClient, clusterName string) View {
+func NewEKSNodeGroupsTableView(client *awsclient.ServiceClient, clusterName string, k8sClient *awseks.K8sClient) View {
 	return NewTableView(TableViewConfig[awseks.EKSNodeGroup]{
 		Title:       "Node Groups",
 		LoadingText: "Loading node groups...",
@@ -606,6 +608,9 @@ func NewEKSNodeGroupsTableView(client *awsclient.ServiceClient, clusterName stri
 		CopyIDFunc:  func(ng awseks.EKSNodeGroup) string { return ng.Name },
 		CopyARNFunc: func(ng awseks.EKSNodeGroup) string { return ng.ARN },
 		OnEnter: func(ng awseks.EKSNodeGroup) tea.Cmd {
+			if k8sClient != nil {
+				return pushView(NewK8sNodesTableView(k8sClient, ng.Name))
+			}
 			return pushView(NewEKSNodeGroupDetailView(ng))
 		},
 	})

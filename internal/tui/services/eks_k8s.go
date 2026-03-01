@@ -53,6 +53,20 @@ type K8sDeployment struct {
 	Strategy  string
 }
 
+// K8sNode represents a node for TUI display.
+type K8sNode struct {
+	Name         string
+	Status       string // "Ready", "NotReady"
+	Roles        string // "control-plane", "worker", etc.
+	Age          string
+	Version      string // kubelet version
+	InternalIP   string
+	ExternalIP   string
+	OS           string // e.g. "linux/amd64"
+	InstanceType string // from node label
+	NodeGroup    string // from eks.amazonaws.com/nodegroup label
+}
+
 // ---------------------------------------------------------------------------
 // Data-fetching helpers
 // ---------------------------------------------------------------------------
@@ -189,6 +203,68 @@ func listDeployments(ctx context.Context, k8s *awseks.K8sClient, namespace strin
 	return deployments, nil
 }
 
+// listNodes fetches nodes from K8s API filtered by node group name.
+func listNodes(ctx context.Context, k8s *awseks.K8sClient, nodeGroupName string) ([]K8sNode, error) {
+	opts := metav1.ListOptions{}
+	if nodeGroupName != "" {
+		opts.LabelSelector = "eks.amazonaws.com/nodegroup=" + nodeGroupName
+	}
+	nodeList, err := k8s.Clientset.CoreV1().Nodes().List(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	nodes := make([]K8sNode, 0, len(nodeList.Items))
+	for _, node := range nodeList.Items {
+		// Determine status from conditions
+		status := "NotReady"
+		for _, cond := range node.Status.Conditions {
+			if cond.Type == "Ready" && cond.Status == "True" {
+				status = "Ready"
+				break
+			}
+		}
+
+		// Determine roles from labels
+		var roles []string
+		for label := range node.Labels {
+			if role, ok := strings.CutPrefix(label, "node-role.kubernetes.io/"); ok && role != "" {
+				roles = append(roles, role)
+			}
+		}
+		roleStr := strings.Join(roles, ",")
+		if roleStr == "" {
+			roleStr = "<none>"
+		}
+
+		// Addresses
+		internalIP := ""
+		externalIP := ""
+		for _, addr := range node.Status.Addresses {
+			switch addr.Type {
+			case "InternalIP":
+				internalIP = addr.Address
+			case "ExternalIP":
+				externalIP = addr.Address
+			}
+		}
+
+		nodes = append(nodes, K8sNode{
+			Name:         node.Name,
+			Status:       status,
+			Roles:        roleStr,
+			Age:          formatAge(node.CreationTimestamp.Time),
+			Version:      node.Status.NodeInfo.KubeletVersion,
+			InternalIP:   internalIP,
+			ExternalIP:   externalIP,
+			OS:           node.Status.NodeInfo.OperatingSystem + "/" + node.Status.NodeInfo.Architecture,
+			InstanceType: node.Labels["node.kubernetes.io/instance-type"],
+			NodeGroup:    node.Labels["eks.amazonaws.com/nodegroup"],
+		})
+	}
+	return nodes, nil
+}
+
 // formatAge converts a time to a human-readable age string.
 func formatAge(t time.Time) string {
 	d := time.Since(t)
@@ -313,6 +389,40 @@ func newK8sServicesTableView(k8s *awseks.K8sClient, namespace string, pfManager 
 		KeyHandlers: keyHandlers,
 		OnEnter: func(s K8sService) tea.Cmd {
 			return pushView(NewK8sServiceDetailView(k8s, s))
+		},
+	})
+}
+
+// NewK8sNodesTableView creates a table view for K8s nodes in a node group.
+func NewK8sNodesTableView(k8s *awseks.K8sClient, nodeGroupName string) *TableView[K8sNode] {
+	nodesHelp := HelpContextK8sNodes
+	return NewTableView(TableViewConfig[K8sNode]{
+		Title:       "Nodes: " + nodeGroupName,
+		LoadingText: "Loading nodes...",
+		Columns: []table.Column{
+			{Title: "Name", Width: 36},
+			{Title: "Status", Width: 10},
+			{Title: "Version", Width: 14},
+			{Title: "Instance Type", Width: 16},
+			{Title: "Internal IP", Width: 16},
+			{Title: "Age", Width: 8},
+		},
+		FetchFunc: func(ctx context.Context) ([]K8sNode, error) {
+			return listNodes(ctx, k8s, nodeGroupName)
+		},
+		RowMapper: func(n K8sNode) table.Row {
+			return table.Row{n.Name, n.Status, n.Version, n.InstanceType,
+				n.InternalIP, n.Age}
+		},
+		CopyIDFunc: func(n K8sNode) string { return n.Name },
+		KeyHandlers: map[string]func(K8sNode) tea.Cmd{
+			"x": func(n K8sNode) tea.Cmd {
+				return pushView(newNodeDebugInputView(k8s, n))
+			},
+		},
+		HelpCtx: &nodesHelp,
+		OnEnter: func(n K8sNode) tea.Cmd {
+			return pushView(NewK8sNodeDetailView(k8s, n))
 		},
 	})
 }

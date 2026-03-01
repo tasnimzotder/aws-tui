@@ -19,6 +19,7 @@ const (
 	HelpContextTextView
 	HelpContextEKSDetail
 	HelpContextK8sPods
+	HelpContextK8sNodes
 	HelpContextK8sLogs
 )
 
@@ -122,6 +123,20 @@ func renderHelp(ctx HelpContext, width, height int) string {
 			{"l", "View pod logs"},
 			{"f", "Port forward"},
 			{"F", "List port forwards"},
+			{"/", "Filter rows"},
+			{"n/p", "Next/prev page"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"j/k", "Navigate up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
+	case HelpContextK8sNodes:
+		title = "Keybindings — K8s Nodes"
+		bindings = []helpBinding{
+			{"Enter", "Node details"},
+			{"x", "Debug exec into node"},
 			{"/", "Filter rows"},
 			{"n/p", "Next/prev page"},
 			{"r", "Refresh data"},

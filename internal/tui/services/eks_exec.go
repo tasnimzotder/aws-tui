@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textinput"
@@ -18,6 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/tools/remotecommand"
@@ -651,4 +653,279 @@ func (v *portForwardListView) View() string {
 func (v *portForwardListView) SetSize(width, height int) {
 	v.list.SetSize(width, height)
 }
+
+// ---------------------------------------------------------------------------
+// Node Debug — creates a privileged debug pod on a node, execs into it
+// ---------------------------------------------------------------------------
+
+// debugNodeProcess implements tea.ExecCommand. It creates a debug pod on the
+// target node, waits for it to run, execs into it, then cleans up the pod.
+type debugNodeProcess struct {
+	k8s      *awseks.K8sClient
+	node     K8sNode
+	command  []string
+	stdin    io.Reader
+	stdout   io.Writer
+	stderr   io.Writer
+}
+
+func (p *debugNodeProcess) SetStdin(r io.Reader)  { p.stdin = r }
+func (p *debugNodeProcess) SetStdout(w io.Writer) { p.stdout = w }
+func (p *debugNodeProcess) SetStderr(w io.Writer) { p.stderr = w }
+
+func (p *debugNodeProcess) Run() error {
+	ctx := context.Background()
+	podName := "debug-node-" + sanitizeName(p.node.Name)
+	namespace := "default"
+
+	// Print header
+	p.printHeader(namespace, podName)
+
+	// Create the debug pod
+	privileged := true
+	hostPathType := corev1.HostPathDirectory
+	debugPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "aws-tui",
+				"aws-tui/debug-node":           p.node.Name,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName:      p.node.Name,
+			HostPID:       true,
+			HostNetwork:   true,
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:    "debug",
+					Image:   "amazonlinux:2023",
+					Command: []string{"sleep", "3600"},
+					SecurityContext: &corev1.SecurityContext{
+						Privileged: &privileged,
+					},
+					Stdin: true,
+					TTY:   true,
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "host-root",
+							MountPath: "/host",
+						},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "host-root",
+					VolumeSource: corev1.VolumeSource{
+						HostPath: &corev1.HostPathVolumeSource{
+							Path: "/",
+							Type: &hostPathType,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err := p.k8s.Clientset.CoreV1().Pods(namespace).Create(ctx, debugPod, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("creating debug pod: %w", err)
+	}
+
+	// Always clean up the debug pod on exit
+	defer func() {
+		cleanupCtx := context.Background()
+		_ = p.k8s.Clientset.CoreV1().Pods(namespace).Delete(cleanupCtx, podName, metav1.DeleteOptions{})
+	}()
+
+	// Wait for pod to be running (poll with timeout)
+	fmt.Fprintf(p.stdout, "Waiting for debug pod to start...\r")
+	for i := 0; i < 60; i++ {
+		pod, err := p.k8s.Clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("checking debug pod status: %w", err)
+		}
+		if pod.Status.Phase == corev1.PodRunning {
+			break
+		}
+		if pod.Status.Phase == corev1.PodFailed {
+			return fmt.Errorf("debug pod failed to start")
+		}
+		if i == 59 {
+			return fmt.Errorf("timeout waiting for debug pod to start")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+
+	// Put terminal in raw mode
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return fmt.Errorf("setting terminal raw mode: %w", err)
+	}
+	defer term.Restore(fd, oldState)
+
+	// Exec into the debug pod
+	config := p.k8s.Config
+	req := p.k8s.Clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: "debug",
+			Command:   p.command,
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       true,
+		}, scheme.ParameterCodec)
+
+	exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
+	if err != nil {
+		return fmt.Errorf("creating SPDY executor: %w", err)
+	}
+
+	sizeQueue := newTerminalSizeQueue(fd)
+	defer sizeQueue.stop()
+
+	return exec.StreamWithContext(context.Background(), remotecommand.StreamOptions{
+		Stdin:             p.stdin,
+		Stdout:            p.stdout,
+		Stderr:            p.stderr,
+		Tty:               true,
+		TerminalSizeQueue: sizeQueue,
+	})
+}
+
+func (p *debugNodeProcess) printHeader(namespace, podName string) {
+	w, _, _ := term.GetSize(int(os.Stdout.Fd()))
+	if w <= 0 {
+		w = 80
+	}
+
+	cluster := p.k8s.ClusterName
+	if cluster == "" {
+		cluster = "unknown"
+	}
+	cmd := strings.Join(p.command, " ")
+
+	info := fmt.Sprintf(" node: %s  pod: %s/%s  cmd: %s", p.node.Name, namespace, podName, cmd)
+
+	label := fmt.Sprintf(" debug-node  %s ", cluster)
+	labelStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#1a1a2e")).
+		Background(lipgloss.Color("#FF8C33"))
+	infoStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FF8C33"))
+	divStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6B7280"))
+
+	header := labelStyle.Render(label)
+	headerInfo := infoStyle.Render(info)
+	divider := divStyle.Render(strings.Repeat("─", w))
+
+	fmt.Fprintf(p.stdout, "%s%s\n%s\n", header, headerInfo, divider)
+	fmt.Fprintf(p.stdout, "\033]0;debug-node %s [%s]\007", p.node.Name, cluster)
+}
+
+// sanitizeName makes a name safe for K8s resource naming (lowercase, truncated).
+func sanitizeName(name string) string {
+	// K8s names must be lowercase and <= 63 chars
+	s := strings.ToLower(name)
+	s = strings.ReplaceAll(s, ".", "-")
+	if len(s) > 50 {
+		s = s[:50]
+	}
+	return s
+}
+
+// debugNode returns a tea.Cmd that suspends the TUI, creates a debug pod on
+// the node, execs into it, then cleans up.
+func debugNode(k8s *awseks.K8sClient, node K8sNode, command []string) tea.Cmd {
+	process := &debugNodeProcess{
+		k8s:     k8s,
+		node:    node,
+		command: command,
+	}
+	return tea.Exec(process, func(err error) tea.Msg {
+		return execDoneMsg{err: err}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Node Debug Input View — prompts for command before debug exec
+// ---------------------------------------------------------------------------
+
+type nodeDebugInputView struct {
+	k8s   *awseks.K8sClient
+	node  K8sNode
+	input textinput.Model
+}
+
+func newNodeDebugInputView(k8s *awseks.K8sClient, node K8sNode) *nodeDebugInputView {
+	ti := textinput.New()
+	ti.SetValue("chroot /host")
+	ti.CharLimit = 256
+	ti.Focus()
+
+	return &nodeDebugInputView{
+		k8s:   k8s,
+		node:  node,
+		input: ti,
+	}
+}
+
+func (v *nodeDebugInputView) Title() string {
+	return fmt.Sprintf("Debug Node: %s", v.node.Name)
+}
+
+func (v *nodeDebugInputView) Init() tea.Cmd { return textinput.Blink }
+
+func (v *nodeDebugInputView) Update(msg tea.Msg) (View, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "enter":
+			cmd := strings.TrimSpace(v.input.Value())
+			if cmd == "" {
+				return v, nil
+			}
+			return v, debugNode(v.k8s, v.node, parseCommand(cmd))
+		case "esc":
+			return v, func() tea.Msg { return PopViewMsg{} }
+		}
+	case tea.WindowSizeMsg:
+		return v, nil
+	}
+
+	var cmd tea.Cmd
+	v.input, cmd = v.input.Update(msg)
+	return v, cmd
+}
+
+func (v *nodeDebugInputView) View() string {
+	var b strings.Builder
+	bold := lipgloss.NewStyle().Bold(true)
+
+	b.WriteString(bold.Render(fmt.Sprintf("Debug node: %s", v.node.Name)))
+	b.WriteString("\n\n")
+	b.WriteString("A privileged debug pod will be created on this node.\n")
+	b.WriteString("Command:\n")
+	b.WriteString(v.input.View())
+	b.WriteString("\n\n")
+	b.WriteString(theme.MutedStyle.Render("Enter to exec  Esc to cancel"))
+	return b.String()
+}
+
+func (v *nodeDebugInputView) SetSize(width, height int) {}
+func (v *nodeDebugInputView) CapturesInput() bool        { return true }
 
