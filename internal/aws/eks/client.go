@@ -340,3 +340,24 @@ func (c *Client) ListAccessEntries(ctx context.Context, clusterName string) ([]E
 
 	return entries, nil
 }
+
+// ListClustersPage fetches a single page of EKS cluster names and describes each.
+func (c *Client) ListClustersPage(ctx context.Context, token *string) ([]EKSCluster, *string, error) {
+	out, err := c.api.ListClusters(ctx, &awseks.ListClustersInput{
+		NextToken: token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ListClusters: %w", err)
+	}
+
+	clusters := make([]EKSCluster, 0, len(out.Clusters))
+	for _, name := range out.Clusters {
+		cluster, err := c.DescribeCluster(ctx, name)
+		if err != nil {
+			return nil, nil, err
+		}
+		clusters = append(clusters, cluster)
+	}
+
+	return clusters, out.NextToken, nil
+}

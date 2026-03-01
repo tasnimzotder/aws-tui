@@ -16,7 +16,8 @@ import (
 
 // --- Clusters View ---
 
-func NewECSClustersView(client *awsclient.ServiceClient) *TableView[awsecs.ECSCluster] {
+func NewECSClustersView(client *awsclient.ServiceClient, profile, region string) *TableView[awsecs.ECSCluster] {
+	var nextToken *string
 	return NewTableView(TableViewConfig[awsecs.ECSCluster]{
 		Title:       "ECS",
 		LoadingText: "Loading ECS clusters...",
@@ -26,8 +27,22 @@ func NewECSClustersView(client *awsclient.ServiceClient) *TableView[awsecs.ECSCl
 			{Title: "Services", Width: 10},
 			{Title: "Tasks", Width: 10},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsecs.ECSCluster, error) {
-			return client.ECS.ListClusters(ctx)
+		FetchFuncPaged: func(ctx context.Context) ([]awsecs.ECSCluster, bool, error) {
+			nextToken = nil
+			clusters, nt, err := client.ECS.ListClustersPage(ctx, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return clusters, nt != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsecs.ECSCluster, bool, error) {
+			clusters, nt, err := client.ECS.ListClustersPage(ctx, nextToken)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return clusters, nt != nil, nil
 		},
 		RowMapper: func(cl awsecs.ECSCluster) table.Row {
 			return table.Row{cl.Name, theme.RenderStatus(cl.Status), fmt.Sprintf("%d", cl.ServiceCount), fmt.Sprintf("%d", cl.RunningTaskCount)}
@@ -35,14 +50,15 @@ func NewECSClustersView(client *awsclient.ServiceClient) *TableView[awsecs.ECSCl
 		CopyIDFunc:  func(cl awsecs.ECSCluster) string { return cl.Name },
 		CopyARNFunc: func(cl awsecs.ECSCluster) string { return cl.ARN },
 		OnEnter: func(cl awsecs.ECSCluster) tea.Cmd {
-			return pushView(NewECSServicesView(client, cl.Name))
+			return pushView(NewECSServicesView(client, cl.Name, profile, region))
 		},
 	})
 }
 
 // --- Services View ---
 
-func NewECSServicesView(client *awsclient.ServiceClient, clusterName string) *TableView[awsecs.ECSService] {
+func NewECSServicesView(client *awsclient.ServiceClient, clusterName, profile, region string) *TableView[awsecs.ECSService] {
+	var nextToken *string
 	return NewTableView(TableViewConfig[awsecs.ECSService]{
 		Title:       clusterName,
 		LoadingText: "Loading services...",
@@ -54,8 +70,22 @@ func NewECSServicesView(client *awsclient.ServiceClient, clusterName string) *Ta
 			{Title: "Pending", Width: 8},
 			{Title: "Task Def", Width: 28},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsecs.ECSService, error) {
-			return client.ECS.ListServices(ctx, clusterName)
+		FetchFuncPaged: func(ctx context.Context) ([]awsecs.ECSService, bool, error) {
+			nextToken = nil
+			svcs, nt, err := client.ECS.ListServicesPage(ctx, clusterName, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return svcs, nt != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsecs.ECSService, bool, error) {
+			svcs, nt, err := client.ECS.ListServicesPage(ctx, clusterName, nextToken)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return svcs, nt != nil, nil
 		},
 		RowMapper: func(svc awsecs.ECSService) table.Row {
 			return table.Row{svc.Name, theme.RenderStatus(svc.Status), fmt.Sprintf("%d", svc.DesiredCount), fmt.Sprintf("%d", svc.RunningCount), fmt.Sprintf("%d", svc.PendingCount), svc.TaskDef}
@@ -63,7 +93,7 @@ func NewECSServicesView(client *awsclient.ServiceClient, clusterName string) *Ta
 		CopyIDFunc:  func(svc awsecs.ECSService) string { return svc.Name },
 		CopyARNFunc: func(svc awsecs.ECSService) string { return svc.ARN },
 		OnEnter: func(svc awsecs.ECSService) tea.Cmd {
-			return pushView(NewECSServiceSubMenuView(client, clusterName, svc.Name, svc.ARN))
+			return pushView(NewECSServiceSubMenuView(client, clusterName, svc.Name, svc.ARN, profile, region))
 		},
 	})
 }
@@ -84,10 +114,12 @@ type ECSServiceSubMenuView struct {
 	clusterName string
 	serviceName string
 	serviceARN  string
+	profile     string
+	region      string
 	list        list.Model
 }
 
-func NewECSServiceSubMenuView(client *awsclient.ServiceClient, clusterName, serviceName, serviceARN string) *ECSServiceSubMenuView {
+func NewECSServiceSubMenuView(client *awsclient.ServiceClient, clusterName, serviceName, serviceARN, profile, region string) *ECSServiceSubMenuView {
 	items := []list.Item{
 		ecsServiceMenuItem{name: "Tasks", desc: "View running tasks for this service"},
 		ecsServiceMenuItem{name: "Deployments", desc: "View deployment history"},
@@ -107,6 +139,8 @@ func NewECSServiceSubMenuView(client *awsclient.ServiceClient, clusterName, serv
 		clusterName: clusterName,
 		serviceName: serviceName,
 		serviceARN:  serviceARN,
+		profile:     profile,
+		region:      region,
 		list:        l,
 	}
 }
@@ -129,7 +163,7 @@ func (v *ECSServiceSubMenuView) Update(msg tea.Msg) (View, tea.Cmd) {
 			}
 			switch selected.name {
 			case "Tasks":
-				return v, pushView(NewECSTasksView(v.client, v.clusterName, v.serviceName))
+				return v, pushView(NewECSTasksView(v.client, v.clusterName, v.serviceName, v.profile, v.region))
 			case "Deployments":
 				return v, pushView(NewECSDeploymentsView(v.client, v.clusterName, v.serviceName))
 			case "Events":
@@ -158,7 +192,8 @@ func (v *ECSServiceSubMenuView) CopyARN() string { return v.serviceARN }
 
 // --- Tasks View ---
 
-func NewECSTasksView(client *awsclient.ServiceClient, clusterName, serviceName string) *TableView[awsecs.ECSTask] {
+func NewECSTasksView(client *awsclient.ServiceClient, clusterName, serviceName, profile, region string) *TableView[awsecs.ECSTask] {
+	var nextToken *string
 	return NewTableView(TableViewConfig[awsecs.ECSTask]{
 		Title:       "Tasks",
 		LoadingText: "Loading tasks...",
@@ -169,8 +204,22 @@ func NewECSTasksView(client *awsclient.ServiceClient, clusterName, serviceName s
 			{Title: "Started", Width: 20},
 			{Title: "Health", Width: 10},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsecs.ECSTask, error) {
-			return client.ECS.ListTasks(ctx, clusterName, serviceName)
+		FetchFuncPaged: func(ctx context.Context) ([]awsecs.ECSTask, bool, error) {
+			nextToken = nil
+			tasks, nt, err := client.ECS.ListTasksPage(ctx, clusterName, serviceName, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return tasks, nt != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsecs.ECSTask, bool, error) {
+			tasks, nt, err := client.ECS.ListTasksPage(ctx, clusterName, serviceName, nextToken)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return tasks, nt != nil, nil
 		},
 		RowMapper: func(t awsecs.ECSTask) table.Row {
 			return table.Row{t.TaskID, theme.RenderStatus(t.Status), t.TaskDef, utils.TimeOrDash(t.StartedAt, utils.DateTime), theme.RenderStatus(t.HealthStatus)}
@@ -178,7 +227,7 @@ func NewECSTasksView(client *awsclient.ServiceClient, clusterName, serviceName s
 		CopyIDFunc:  func(t awsecs.ECSTask) string { return t.TaskID },
 		CopyARNFunc: func(t awsecs.ECSTask) string { return t.ARN },
 		OnEnter: func(t awsecs.ECSTask) tea.Cmd {
-			return pushView(NewTaskDetailView(client, clusterName, t.ARN))
+			return pushView(NewTaskDetailView(client, clusterName, t.ARN, profile, region))
 		},
 	})
 }

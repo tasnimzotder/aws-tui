@@ -18,6 +18,7 @@ import (
 
 func NewVPCListView(client *awsclient.ServiceClient) *TableView[awsvpc.VPCInfo] {
 	vpcHelp := HelpContextVPC
+	var nextToken *string
 	return NewTableView(TableViewConfig[awsvpc.VPCInfo]{
 		Title:       "VPC",
 		LoadingText: "Loading VPCs...",
@@ -29,8 +30,22 @@ func NewVPCListView(client *awsclient.ServiceClient) *TableView[awsvpc.VPCInfo] 
 			{Title: "Default", Width: 8},
 			{Title: "State", Width: 12},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsvpc.VPCInfo, error) {
-			return client.VPC.ListVPCs(ctx)
+		FetchFuncPaged: func(ctx context.Context) ([]awsvpc.VPCInfo, bool, error) {
+			nextToken = nil
+			vpcs, nt, err := client.VPC.ListVPCsPage(ctx, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return vpcs, nt != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsvpc.VPCInfo, bool, error) {
+			vpcs, nt, err := client.VPC.ListVPCsPage(ctx, nextToken)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return vpcs, nt != nil, nil
 		},
 		RowMapper: func(vpc awsvpc.VPCInfo) table.Row {
 			def := "No"
@@ -49,6 +64,7 @@ func NewVPCListView(client *awsclient.ServiceClient) *TableView[awsvpc.VPCInfo] 
 // --- Subnets View ---
 
 func NewSubnetsView(client *awsclient.ServiceClient, vpcID string) *TableView[awsvpc.SubnetInfo] {
+	var nextToken *string
 	return NewTableView(TableViewConfig[awsvpc.SubnetInfo]{
 		Title:       "Subnets",
 		LoadingText: "Loading subnets...",
@@ -59,8 +75,22 @@ func NewSubnetsView(client *awsclient.ServiceClient, vpcID string) *TableView[aw
 			{Title: "AZ", Width: 14},
 			{Title: "Available IPs", Width: 14},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsvpc.SubnetInfo, error) {
-			return client.VPC.ListSubnets(ctx, vpcID)
+		FetchFuncPaged: func(ctx context.Context) ([]awsvpc.SubnetInfo, bool, error) {
+			nextToken = nil
+			subnets, nt, err := client.VPC.ListSubnetsPage(ctx, vpcID, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return subnets, nt != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsvpc.SubnetInfo, bool, error) {
+			subnets, nt, err := client.VPC.ListSubnetsPage(ctx, vpcID, nextToken)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return subnets, nt != nil, nil
 		},
 		RowMapper: func(s awsvpc.SubnetInfo) table.Row {
 			return table.Row{s.SubnetID, s.Name, s.CIDR, s.AZ, fmt.Sprintf("%d", s.AvailableIPs)}
@@ -72,6 +102,7 @@ func NewSubnetsView(client *awsclient.ServiceClient, vpcID string) *TableView[aw
 // --- Security Groups View ---
 
 func NewSecurityGroupsView(client *awsclient.ServiceClient, vpcID string) *TableView[awsvpc.SecurityGroupInfo] {
+	var nextToken *string
 	return NewTableView(TableViewConfig[awsvpc.SecurityGroupInfo]{
 		Title:       "Security Groups",
 		LoadingText: "Loading security groups...",
@@ -82,8 +113,22 @@ func NewSecurityGroupsView(client *awsclient.ServiceClient, vpcID string) *Table
 			{Title: "Inbound", Width: 8},
 			{Title: "Outbound", Width: 9},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsvpc.SecurityGroupInfo, error) {
-			return client.VPC.ListSecurityGroups(ctx, vpcID)
+		FetchFuncPaged: func(ctx context.Context) ([]awsvpc.SecurityGroupInfo, bool, error) {
+			nextToken = nil
+			sgs, nt, err := client.VPC.ListSecurityGroupsPage(ctx, vpcID, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return sgs, nt != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsvpc.SecurityGroupInfo, bool, error) {
+			sgs, nt, err := client.VPC.ListSecurityGroupsPage(ctx, vpcID, nextToken)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			return sgs, nt != nil, nil
 		},
 		RowMapper: func(sg awsvpc.SecurityGroupInfo) table.Row {
 			return table.Row{sg.GroupID, sg.Name, sg.Description, fmt.Sprintf("%d", sg.InboundRules), fmt.Sprintf("%d", sg.OutboundRules)}

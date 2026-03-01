@@ -11,10 +11,12 @@ type CostData struct {
 	Currency       string
 	TopServices    []ServiceCost
 	DailySpend     []DailySpendEntry
+	ServiceDailyMap    map[string]map[string]float64 // service -> date -> spend
 	Anomalies          []ServiceAnomaly
 	LastMonthMTDSpend  float64
 	MoMChangePercent   float64
 	LastUpdated        time.Time
+	TargetMonth        time.Time // month being displayed (zero = current)
 }
 
 // ServiceCost represents cost for a single AWS service.

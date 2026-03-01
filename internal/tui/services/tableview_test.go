@@ -484,6 +484,61 @@ func TestKeyHandlersWithPagination(t *testing.T) {
 	}
 }
 
+func TestRefreshCancelsPreviousContext(t *testing.T) {
+	var capturedCtx context.Context
+	tv := NewTableView(TableViewConfig[testItem]{
+		PageSize: 20,
+		Columns:  []table.Column{{Title: "ID", Width: 10}},
+		FetchFunc: func(ctx context.Context) ([]testItem, error) {
+			capturedCtx = ctx
+			return nil, nil
+		},
+		RowMapper: func(item testItem) table.Row { return table.Row{item.id} },
+	})
+
+	// First fetch via Init — run the returned cmd to capture context
+	cmd := tv.fetchData()
+	if cmd == nil {
+		t.Fatal("fetchData should return a cmd")
+	}
+	cmd() // execute to capture ctx
+	firstCtx := capturedCtx
+
+	// Refresh creates a new context and cancels the old one
+	cmd = tv.fetchData()
+	cmd()
+
+	// The first context should now be cancelled
+	if firstCtx.Err() != context.Canceled {
+		t.Error("first context should be cancelled after second fetchData")
+	}
+	// The second context should still be active
+	if capturedCtx.Err() != nil {
+		t.Error("second context should not be cancelled")
+	}
+}
+
+func TestCancelMethod(t *testing.T) {
+	tv := NewTableView(TableViewConfig[testItem]{
+		PageSize:  20,
+		Columns:   []table.Column{{Title: "ID", Width: 10}},
+		FetchFunc: func(ctx context.Context) ([]testItem, error) { return nil, nil },
+		RowMapper: func(item testItem) table.Row { return table.Row{item.id} },
+	})
+
+	// Cancel on nil should not panic
+	tv.Cancel()
+
+	// After fetchData, cancel should work
+	tv.fetchData()
+	if tv.cancel == nil {
+		t.Fatal("cancel should be set")
+	}
+	tv.Cancel()
+	// Should not panic on double cancel
+	tv.Cancel()
+}
+
 func TestHelpContextS3Objects(t *testing.T) {
 	output := renderHelp(HelpContextS3Objects, 80, 24)
 	if !contains(output, "View content") {

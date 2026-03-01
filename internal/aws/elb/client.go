@@ -359,3 +359,36 @@ func formatAction(actions []elbtypes.Action) string {
 	}
 }
 
+// ListLoadBalancersPage fetches a single page of load balancers.
+func (c *Client) ListLoadBalancersPage(ctx context.Context, marker *string) ([]ELBLoadBalancer, *string, error) {
+	out, err := c.api.DescribeLoadBalancers(ctx, &elbv2.DescribeLoadBalancersInput{
+		Marker: marker,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("DescribeLoadBalancers: %w", err)
+	}
+
+	lbs := make([]ELBLoadBalancer, 0, len(out.LoadBalancers))
+	for _, lb := range out.LoadBalancers {
+		var state string
+		if lb.State != nil {
+			state = string(lb.State.Code)
+		}
+		var createdAt time.Time
+		if lb.CreatedTime != nil {
+			createdAt = *lb.CreatedTime
+		}
+		lbs = append(lbs, ELBLoadBalancer{
+			Name:      aws.ToString(lb.LoadBalancerName),
+			ARN:       aws.ToString(lb.LoadBalancerArn),
+			Type:      string(lb.Type),
+			State:     state,
+			Scheme:    string(lb.Scheme),
+			DNSName:   aws.ToString(lb.DNSName),
+			VPCID:     aws.ToString(lb.VpcId),
+			CreatedAt: createdAt,
+		})
+	}
+
+	return lbs, out.NextMarker, nil
+}

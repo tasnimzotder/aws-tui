@@ -84,6 +84,7 @@ func (v *IAMSubMenuView) SetSize(width, height int) {
 // --- Users List ---
 
 func NewIAMUsersView(client *awsclient.ServiceClient) *TableView[awsiam.IAMUser] {
+	var nextMarker *string
 	return NewTableView(TableViewConfig[awsiam.IAMUser]{
 		Title:       "Users",
 		LoadingText: "Loading users...",
@@ -93,8 +94,22 @@ func NewIAMUsersView(client *awsclient.ServiceClient) *TableView[awsiam.IAMUser]
 			{Title: "Created", Width: 20},
 			{Title: "Path", Width: 20},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsiam.IAMUser, error) {
-			return client.IAM.ListUsers(ctx)
+		FetchFuncPaged: func(ctx context.Context) ([]awsiam.IAMUser, bool, error) {
+			nextMarker = nil
+			users, nm, err := client.IAM.ListUsersPage(ctx, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextMarker = nm
+			return users, nm != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsiam.IAMUser, bool, error) {
+			users, nm, err := client.IAM.ListUsersPage(ctx, nextMarker)
+			if err != nil {
+				return nil, false, err
+			}
+			nextMarker = nm
+			return users, nm != nil, nil
 		},
 		RowMapper: func(u awsiam.IAMUser) table.Row {
 			return table.Row{u.Name, u.UserID, utils.TimeOrDash(u.CreatedAt, utils.DateOnly), u.Path}
@@ -110,6 +125,7 @@ func NewIAMUsersView(client *awsclient.ServiceClient) *TableView[awsiam.IAMUser]
 // --- Roles List ---
 
 func NewIAMRolesView(client *awsclient.ServiceClient) *TableView[awsiam.IAMRole] {
+	var nextMarker *string
 	return NewTableView(TableViewConfig[awsiam.IAMRole]{
 		Title:       "Roles",
 		LoadingText: "Loading roles...",
@@ -119,8 +135,22 @@ func NewIAMRolesView(client *awsclient.ServiceClient) *TableView[awsiam.IAMRole]
 			{Title: "Created", Width: 20},
 			{Title: "Path", Width: 20},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsiam.IAMRole, error) {
-			return client.IAM.ListRoles(ctx)
+		FetchFuncPaged: func(ctx context.Context) ([]awsiam.IAMRole, bool, error) {
+			nextMarker = nil
+			roles, nm, err := client.IAM.ListRolesPage(ctx, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextMarker = nm
+			return roles, nm != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsiam.IAMRole, bool, error) {
+			roles, nm, err := client.IAM.ListRolesPage(ctx, nextMarker)
+			if err != nil {
+				return nil, false, err
+			}
+			nextMarker = nm
+			return roles, nm != nil, nil
 		},
 		RowMapper: func(r awsiam.IAMRole) table.Row {
 			desc := r.Description
@@ -140,6 +170,7 @@ func NewIAMRolesView(client *awsclient.ServiceClient) *TableView[awsiam.IAMRole]
 // --- Policies List ---
 
 func NewIAMPoliciesView(client *awsclient.ServiceClient) *TableView[awsiam.IAMPolicy] {
+	var nextMarker *string
 	return NewTableView(TableViewConfig[awsiam.IAMPolicy]{
 		Title:       "Policies",
 		LoadingText: "Loading policies...",
@@ -149,8 +180,22 @@ func NewIAMPoliciesView(client *awsclient.ServiceClient) *TableView[awsiam.IAMPo
 			{Title: "Created", Width: 20},
 			{Title: "Updated", Width: 20},
 		},
-		FetchFunc: func(ctx context.Context) ([]awsiam.IAMPolicy, error) {
-			return client.IAM.ListPolicies(ctx)
+		FetchFuncPaged: func(ctx context.Context) ([]awsiam.IAMPolicy, bool, error) {
+			nextMarker = nil
+			policies, nm, err := client.IAM.ListPoliciesPage(ctx, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextMarker = nm
+			return policies, nm != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awsiam.IAMPolicy, bool, error) {
+			policies, nm, err := client.IAM.ListPoliciesPage(ctx, nextMarker)
+			if err != nil {
+				return nil, false, err
+			}
+			nextMarker = nm
+			return policies, nm != nil, nil
 		},
 		RowMapper: func(p awsiam.IAMPolicy) table.Row {
 			return table.Row{p.Name, fmt.Sprintf("%d", p.AttachmentCount), utils.TimeOrDash(p.CreatedAt, utils.DateOnly), utils.TimeOrDash(p.UpdatedAt, utils.DateOnly)}

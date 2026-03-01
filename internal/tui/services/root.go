@@ -84,7 +84,7 @@ func (v *RootView) handleSelection(name string) tea.Cmd {
 		}
 	case "ECS":
 		return func() tea.Msg {
-			return PushViewMsg{View: NewECSClustersView(v.client)}
+			return PushViewMsg{View: NewECSClustersView(v.client, v.profile, v.region)}
 		}
 	case "EKS":
 		return func() tea.Msg {

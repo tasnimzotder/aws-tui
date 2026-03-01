@@ -14,6 +14,8 @@ import (
 
 func NewEC2View(client *awsclient.ServiceClient, profile, region string) *TableView[ec2ViewItem] {
 	helpCtx := HelpContextEC2
+	var nextToken *string
+	var accSummary awsec2.EC2Summary
 	return NewTableView(TableViewConfig[ec2ViewItem]{
 		Title:       "EC2",
 		LoadingText: "Loading EC2 instances...",
@@ -27,16 +29,35 @@ func NewEC2View(client *awsclient.ServiceClient, profile, region string) *TableV
 			{Title: "Private IP", Width: 16},
 			{Title: "Public IP", Width: 16},
 		},
-		FetchFunc: func(ctx context.Context) ([]ec2ViewItem, error) {
-			instances, summary, err := client.EC2.ListInstances(ctx)
+		FetchFuncPaged: func(ctx context.Context) ([]ec2ViewItem, bool, error) {
+			nextToken = nil
+			accSummary = awsec2.EC2Summary{}
+			instances, summary, nt, err := client.EC2.ListInstancesPage(ctx, nil)
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
+			nextToken = nt
+			accSummary = summary
 			items := make([]ec2ViewItem, len(instances))
 			for i, inst := range instances {
-				items[i] = ec2ViewItem{instance: inst, summary: summary}
+				items[i] = ec2ViewItem{instance: inst, summary: accSummary}
 			}
-			return items, nil
+			return items, nt != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]ec2ViewItem, bool, error) {
+			instances, summary, nt, err := client.EC2.ListInstancesPage(ctx, nextToken)
+			if err != nil {
+				return nil, false, err
+			}
+			nextToken = nt
+			accSummary.Running += summary.Running
+			accSummary.Stopped += summary.Stopped
+			accSummary.Total += summary.Total
+			items := make([]ec2ViewItem, len(instances))
+			for i, inst := range instances {
+				items[i] = ec2ViewItem{instance: inst, summary: accSummary}
+			}
+			return items, nt != nil, nil
 		},
 		RowMapper: func(item ec2ViewItem) table.Row {
 			i := item.instance
@@ -49,7 +70,7 @@ func NewEC2View(client *awsclient.ServiceClient, profile, region string) *TableV
 			if len(items) == 0 {
 				return ""
 			}
-			s := items[0].summary
+			s := accSummary
 			return fmt.Sprintf(
 				"%s %s   %s %s   %s %s",
 				theme.MutedStyle.Render("Running:"), theme.SuccessStyle.Render(fmt.Sprintf("%d", s.Running)),

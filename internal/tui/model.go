@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
@@ -33,6 +34,12 @@ type Model struct {
 	table   table.Model
 	width   int
 	height  int
+
+	// Month navigation
+	selectedMonth time.Time // zero = current month
+
+	// Service drill-down
+	drillService string // non-empty = showing service detail
 }
 
 // NewModel creates a new TUI model.
@@ -68,8 +75,15 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) fetchCost() tea.Cmd {
+	target := m.selectedMonth
 	return func() tea.Msg {
-		data, err := m.client.FetchCostData(context.Background())
+		var data *awscost.CostData
+		var err error
+		if target.IsZero() {
+			data, err = m.client.FetchCostData(context.Background())
+		} else {
+			data, err = m.client.FetchCostDataForMonth(context.Background(), target)
+		}
 		if err != nil {
 			return errMsg{err: err}
 		}
@@ -84,6 +98,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "r":
+			m.loading = true
+			m.err = nil
+			return m, tea.Batch(m.spinner.Tick, m.fetchCost())
+		case "esc":
+			if m.drillService != "" {
+				m.drillService = ""
+				return m, nil
+			}
+		case "enter":
+			if m.data != nil && m.drillService == "" {
+				row := m.table.SelectedRow()
+				if len(row) > 0 {
+					m.drillService = row[0]
+					return m, nil
+				}
+			}
+		case "[":
+			// Navigate to previous month (cap at 12 months back)
+			now := time.Now()
+			minMonth := time.Date(now.Year()-1, now.Month(), 1, 0, 0, 0, 0, time.UTC)
+			current := m.selectedMonth
+			if current.IsZero() {
+				current = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+			}
+			prev := current.AddDate(0, -1, 0)
+			if !prev.Before(minMonth) {
+				m.selectedMonth = prev
+				m.drillService = ""
+				m.loading = true
+				m.err = nil
+				return m, tea.Batch(m.spinner.Tick, m.fetchCost())
+			}
+		case "]":
+			// Navigate to next month (cap at current month)
+			now := time.Now()
+			currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+			current := m.selectedMonth
+			if current.IsZero() {
+				return m, nil // already at current month
+			}
+			next := current.AddDate(0, 1, 0)
+			if next.After(currentMonthStart) {
+				m.selectedMonth = time.Time{} // zero = current
+			} else {
+				m.selectedMonth = next
+			}
+			m.drillService = ""
 			m.loading = true
 			m.err = nil
 			return m, tea.Batch(m.spinner.Tick, m.fetchCost())
@@ -185,14 +246,22 @@ func (m Model) View() tea.View {
 		)
 	} else if m.data == nil {
 		content = dashboardStyle.Render(header + "\n\nNo data available.\n")
+	} else if m.drillService != "" {
+		content = dashboardStyle.Render(
+			headerStyle.Render(header) + "\n\n" +
+				m.renderMonthHeader() +
+				m.buildServiceDrillDown() +
+				helpStyle.Render("Esc back • [ ] month • q quit"),
+		)
 	} else {
 		content = dashboardStyle.Render(
 			headerStyle.Render(header) + "\n\n" +
+				m.renderMonthHeader() +
 				m.renderMetrics() + "\n" +
 				m.buildAnomalyView() +
 				m.buildChart() +
 				"\n" + metricLabelStyle.Render("Top Services") + "\n" + m.table.View() + "\n" +
-				helpStyle.Render("Press q to quit • r to refresh"),
+				helpStyle.Render("Enter drill down • [ ] month • r refresh • q quit"),
 		)
 	}
 
@@ -276,6 +345,73 @@ func (m Model) buildChart() string {
 	)
 
 	return "\n" + metricLabelStyle.Render(chart) + "\n"
+}
+
+func (m Model) renderMonthHeader() string {
+	var month time.Time
+	if m.selectedMonth.IsZero() {
+		month = time.Now()
+	} else {
+		month = m.selectedMonth
+	}
+	now := time.Now()
+	currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	label := month.Format("January 2006")
+	if time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.UTC).Equal(currentMonthStart) {
+		label += " (current)"
+	}
+	return metricLabelStyle.Render("◀ "+label+" ▶") + "\n"
+}
+
+func (m Model) buildServiceDrillDown() string {
+	if m.data == nil || m.data.ServiceDailyMap == nil {
+		return metricLabelStyle.Render("No data for "+m.drillService) + "\n"
+	}
+
+	dailyCosts, ok := m.data.ServiceDailyMap[m.drillService]
+	if !ok || len(dailyCosts) == 0 {
+		return metricLabelStyle.Render("No daily data for "+m.drillService) + "\n"
+	}
+
+	// Build sorted daily entries
+	type dayEntry struct {
+		date  string
+		spend float64
+	}
+	entries := make([]dayEntry, 0, len(dailyCosts))
+	var total float64
+	for date, spend := range dailyCosts {
+		entries = append(entries, dayEntry{date, spend})
+		total += spend
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].date < entries[j].date
+	})
+
+	// Header
+	result := titleStyle.Render(m.drillService) + "\n"
+	result += metricLabelStyle.Render("Total: ") + metricValueStyle.Render(utils.Currency(total, m.data.Currency)) + "\n\n"
+
+	// Daily chart
+	if len(entries) >= 2 {
+		values := make([]float64, len(entries))
+		for i, e := range entries {
+			values[i] = e.spend
+		}
+		chartWidth := m.width - 16
+		if chartWidth < 10 {
+			chartWidth = 10
+		}
+		chart := asciigraph.Plot(values,
+			asciigraph.Height(7),
+			asciigraph.Width(chartWidth),
+			asciigraph.Caption("Daily Spend — "+m.drillService),
+			asciigraph.Precision(2),
+		)
+		result += metricLabelStyle.Render(chart) + "\n\n"
+	}
+
+	return result
 }
 
 func (m Model) buildRows() []table.Row {

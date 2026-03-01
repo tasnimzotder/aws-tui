@@ -619,3 +619,78 @@ func (c *Client) GetVPCTags(ctx context.Context, vpcID string) (map[string]strin
 	}
 	return tags, nil
 }
+
+// ListVPCsPage fetches a single page of VPCs.
+func (c *Client) ListVPCsPage(ctx context.Context, token *string) ([]VPCInfo, *string, error) {
+	out, err := c.api.DescribeVpcs(ctx, &awsec2.DescribeVpcsInput{
+		NextToken: token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("DescribeVpcs: %w", err)
+	}
+
+	vpcs := make([]VPCInfo, 0, len(out.Vpcs))
+	for _, v := range out.Vpcs {
+		vpcs = append(vpcs, VPCInfo{
+			VPCID:     aws.ToString(v.VpcId),
+			Name:      nameFromTags(v.Tags),
+			CIDR:      aws.ToString(v.CidrBlock),
+			IsDefault: aws.ToBool(v.IsDefault),
+			State:     string(v.State),
+		})
+	}
+
+	return vpcs, out.NextToken, nil
+}
+
+// ListSubnetsPage fetches a single page of subnets for a VPC.
+func (c *Client) ListSubnetsPage(ctx context.Context, vpcID string, token *string) ([]SubnetInfo, *string, error) {
+	out, err := c.api.DescribeSubnets(ctx, &awsec2.DescribeSubnetsInput{
+		Filters: []types.Filter{
+			{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+		},
+		NextToken: token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("DescribeSubnets: %w", err)
+	}
+
+	subnets := make([]SubnetInfo, 0, len(out.Subnets))
+	for _, s := range out.Subnets {
+		subnets = append(subnets, SubnetInfo{
+			SubnetID:     aws.ToString(s.SubnetId),
+			Name:         nameFromTags(s.Tags),
+			CIDR:         aws.ToString(s.CidrBlock),
+			AZ:           aws.ToString(s.AvailabilityZone),
+			AvailableIPs: int(aws.ToInt32(s.AvailableIpAddressCount)),
+		})
+	}
+
+	return subnets, out.NextToken, nil
+}
+
+// ListSecurityGroupsPage fetches a single page of security groups for a VPC.
+func (c *Client) ListSecurityGroupsPage(ctx context.Context, vpcID string, token *string) ([]SecurityGroupInfo, *string, error) {
+	out, err := c.api.DescribeSecurityGroups(ctx, &awsec2.DescribeSecurityGroupsInput{
+		Filters: []types.Filter{
+			{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+		},
+		NextToken: token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("DescribeSecurityGroups: %w", err)
+	}
+
+	sgs := make([]SecurityGroupInfo, 0, len(out.SecurityGroups))
+	for _, sg := range out.SecurityGroups {
+		sgs = append(sgs, SecurityGroupInfo{
+			GroupID:       aws.ToString(sg.GroupId),
+			Name:          aws.ToString(sg.GroupName),
+			Description:   aws.ToString(sg.Description),
+			InboundRules:  len(sg.IpPermissions),
+			OutboundRules: len(sg.IpPermissionsEgress),
+		})
+	}
+
+	return sgs, out.NextToken, nil
+}

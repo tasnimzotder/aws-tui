@@ -259,10 +259,106 @@ func (c *Client) FetchCostData(ctx context.Context) (*CostData, error) {
 		Currency:          agg.currency,
 		TopServices:       services,
 		DailySpend:        dailySpend,
+		ServiceDailyMap:   agg.serviceDailyMap,
 		Anomalies:         anomalies,
 		LastMonthMTDSpend: lastMonthMTDSpend,
 		MoMChangePercent:  momChangePercent,
 		LastUpdated:       dr.now,
+	}, nil
+}
+
+// FetchCostDataForMonth retrieves cost data for a specific past month.
+// For past months, no forecast is generated (the month is already complete).
+func (c *Client) FetchCostDataForMonth(ctx context.Context, target time.Time) (*CostData, error) {
+	monthStart := time.Date(target.Year(), target.Month(), 1, 0, 0, 0, 0, time.UTC)
+	monthEnd := monthStart.AddDate(0, 1, 0)
+
+	// For the current month, use the regular method
+	now := c.now()
+	currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	if monthStart.Equal(currentMonthStart) {
+		data, err := c.FetchCostData(ctx)
+		if err != nil {
+			return nil, err
+		}
+		data.TargetMonth = target
+		return data, nil
+	}
+
+	// Past month: fetch full month usage
+	usageCh := make(chan usageResult, 1)
+	prevMonthCh := make(chan usageResult, 1)
+
+	go func() {
+		out, err := c.ce.GetCostAndUsage(ctx, &costexplorer.GetCostAndUsageInput{
+			TimePeriod: &types.DateInterval{
+				Start: aws.String(monthStart.Format("2006-01-02")),
+				End:   aws.String(monthEnd.Format("2006-01-02")),
+			},
+			Granularity: types.GranularityDaily,
+			Metrics:     []string{"UnblendedCost"},
+			GroupBy: []types.GroupDefinition{
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
+			},
+		})
+		usageCh <- usageResult{out, err}
+	}()
+
+	// MoM: compare with the month before target
+	prevMonthStart := monthStart.AddDate(0, -1, 0)
+	prevMonthEnd := monthStart
+	go func() {
+		out, err := c.ce.GetCostAndUsage(ctx, &costexplorer.GetCostAndUsageInput{
+			TimePeriod: &types.DateInterval{
+				Start: aws.String(prevMonthStart.Format("2006-01-02")),
+				End:   aws.String(prevMonthEnd.Format("2006-01-02")),
+			},
+			Granularity: types.GranularityMonthly,
+			Metrics:     []string{"UnblendedCost"},
+		})
+		prevMonthCh <- usageResult{out, err}
+	}()
+
+	usageRes := <-usageCh
+	if usageRes.err != nil {
+		return nil, fmt.Errorf("GetCostAndUsage: %w", usageRes.err)
+	}
+
+	// Use the last day of the month as "today" for aggregation
+	lastDay := monthEnd.AddDate(0, 0, -1)
+	agg := aggregateUsage(usageRes.out, lastDay, lastDay.AddDate(0, 0, -1))
+
+	dailySpend := make([]DailySpendEntry, 0, len(agg.dailyMap))
+	for date, spend := range agg.dailyMap {
+		dailySpend = append(dailySpend, DailySpendEntry{Date: date, Spend: spend})
+	}
+	sort.Slice(dailySpend, func(i, j int) bool {
+		return dailySpend[i].Date < dailySpend[j].Date
+	})
+
+	services := make([]ServiceCost, 0, len(agg.serviceMap))
+	for name, cost := range agg.serviceMap {
+		services = append(services, ServiceCost{Name: name, Cost: cost})
+	}
+	sort.Slice(services, func(i, j int) bool {
+		return services[i].Cost > services[j].Cost
+	})
+	if len(services) > 10 {
+		services = services[:10]
+	}
+
+	lastMonthMTDSpend, momChangePercent := extractMoMSpend(<-prevMonthCh, agg.mtdSpend)
+
+	return &CostData{
+		MTDSpend:          agg.mtdSpend,
+		Currency:          agg.currency,
+		TopServices:       services,
+		DailySpend:        dailySpend,
+		ServiceDailyMap:   agg.serviceDailyMap,
+		LastMonthMTDSpend: lastMonthMTDSpend,
+		MoMChangePercent:  momChangePercent,
+		LastUpdated:       now,
+		TargetMonth:       target,
 	}, nil
 }
 

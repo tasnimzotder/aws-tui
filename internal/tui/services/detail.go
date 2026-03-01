@@ -33,6 +33,8 @@ type TaskDetailView struct {
 	client      *awsclient.ServiceClient
 	clusterName string
 	taskARN     string
+	profile     string
+	region      string
 	detail      *awsecs.ECSTaskDetail
 	detailVP    viewport.Model
 	spinner     spinner.Model
@@ -51,13 +53,18 @@ type TaskDetailView struct {
 	forwardToken string
 	tailing      bool
 	logsLoaded   bool
+
+	// Context cancellation
+	cancel context.CancelFunc
 }
 
-func NewTaskDetailView(client *awsclient.ServiceClient, clusterName, taskARN string) *TaskDetailView {
+func NewTaskDetailView(client *awsclient.ServiceClient, clusterName, taskARN, profile, region string) *TaskDetailView {
 	return &TaskDetailView{
 		client:      client,
 		clusterName: clusterName,
 		taskARN:     taskARN,
+		profile:     profile,
+		region:      region,
 		spinner:     theme.NewSpinner(),
 		loading:     true,
 		width:       80,
@@ -73,7 +80,7 @@ func (v *TaskDetailView) Title() string {
 }
 
 func (v *TaskDetailView) HelpContext() *HelpContext {
-	ctx := HelpContextDetail
+	ctx := HelpContextECSTaskDetail
 	return &ctx
 }
 
@@ -82,8 +89,13 @@ func (v *TaskDetailView) Init() tea.Cmd {
 }
 
 func (v *TaskDetailView) fetchData() tea.Cmd {
+	if v.cancel != nil {
+		v.cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	v.cancel = cancel
 	return func() tea.Msg {
-		detail, err := v.client.ECS.DescribeTask(context.Background(), v.clusterName, v.taskARN)
+		detail, err := v.client.ECS.DescribeTask(ctx, v.clusterName, v.taskARN)
 		if err != nil {
 			return errViewMsg{err: err}
 		}
@@ -96,8 +108,13 @@ func (v *TaskDetailView) fetchLogs() tea.Cmd {
 	if logGroup == "" || logStream == "" {
 		return nil
 	}
+	if v.cancel != nil {
+		v.cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	v.cancel = cancel
 	return func() tea.Msg {
-		events, token, err := v.client.Logs.GetLatestLogEvents(context.Background(), logGroup, logStream, 100)
+		events, token, err := v.client.Logs.GetLatestLogEvents(ctx, logGroup, logStream, 100)
 		if err != nil {
 			return errViewMsg{err: err}
 		}
@@ -110,13 +127,25 @@ func (v *TaskDetailView) pollLogs() tea.Cmd {
 	if logGroup == "" || logStream == "" {
 		return nil
 	}
+	if v.cancel != nil {
+		v.cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	v.cancel = cancel
 	token := v.forwardToken
 	return func() tea.Msg {
-		events, newToken, err := v.client.Logs.GetLogEventsSince(context.Background(), logGroup, logStream, token)
+		events, newToken, err := v.client.Logs.GetLogEventsSince(ctx, logGroup, logStream, token)
 		if err != nil {
 			return errViewMsg{err: err}
 		}
 		return logEventsMsg{events: events, forwardToken: newToken}
+	}
+}
+
+// Cancel cancels any in-flight fetch operation.
+func (v *TaskDetailView) Cancel() {
+	if v.cancel != nil {
+		v.cancel()
 	}
 }
 
@@ -205,6 +234,14 @@ func (v *TaskDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 					}
 					return v, v.tickTail()
 				}
+			}
+			return v, nil
+		case "x":
+			if v.detail != nil && len(v.detail.Containers) > 0 {
+				if len(v.detail.Containers) == 1 {
+					return v, pushView(newECSExecInputView(v.clusterName, v.detail.TaskARN, v.detail.Containers[0].Name, v.profile, v.region))
+				}
+				return v, pushView(newECSContainerPickerView(v.clusterName, v.detail.TaskARN, v.profile, v.region, v.detail.Containers))
 			}
 			return v, nil
 		}

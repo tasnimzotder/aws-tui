@@ -14,6 +14,7 @@ import (
 
 func NewELBLoadBalancersView(client *awsclient.ServiceClient) *TableView[awselb.ELBLoadBalancer] {
 	helpCtx := HelpContextELB
+	var nextMarker *string
 	return NewTableView(TableViewConfig[awselb.ELBLoadBalancer]{
 		Title:       "ELB",
 		LoadingText: "Loading load balancers...",
@@ -26,8 +27,22 @@ func NewELBLoadBalancersView(client *awsclient.ServiceClient) *TableView[awselb.
 			{Title: "VPC", Width: 15},
 			{Title: "Created", Width: 12},
 		},
-		FetchFunc: func(ctx context.Context) ([]awselb.ELBLoadBalancer, error) {
-			return client.ELB.ListLoadBalancers(ctx)
+		FetchFuncPaged: func(ctx context.Context) ([]awselb.ELBLoadBalancer, bool, error) {
+			nextMarker = nil
+			lbs, nm, err := client.ELB.ListLoadBalancersPage(ctx, nil)
+			if err != nil {
+				return nil, false, err
+			}
+			nextMarker = nm
+			return lbs, nm != nil, nil
+		},
+		LoadMoreFunc: func(ctx context.Context) ([]awselb.ELBLoadBalancer, bool, error) {
+			lbs, nm, err := client.ELB.ListLoadBalancersPage(ctx, nextMarker)
+			if err != nil {
+				return nil, false, err
+			}
+			nextMarker = nm
+			return lbs, nm != nil, nil
 		},
 		RowMapper: func(lb awselb.ELBLoadBalancer) table.Row {
 			created := "—"

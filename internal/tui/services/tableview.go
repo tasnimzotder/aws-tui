@@ -14,8 +14,10 @@ import (
 
 // tableDataMsg carries async-fetched data back to the correct TableView instance.
 type tableDataMsg struct {
-	viewID uintptr
-	items  any
+	viewID  uintptr
+	items   any
+	hasMore bool
+	paged   bool
 }
 
 type tableMoreDataMsg struct {
@@ -39,7 +41,8 @@ type TableViewConfig[T any] struct {
 	HelpCtx      *HelpContext                                   // optional, override help context
 	HeightOffset int                                            // lines consumed by summary
 	PageSize     int                                            // 0 = default (20)
-	LoadMoreFunc func(ctx context.Context) ([]T, bool, error)  // optional: returns items, hasMore, error
+	LoadMoreFunc   func(ctx context.Context) ([]T, bool, error)  // optional: returns items, hasMore, error
+	FetchFuncPaged func(ctx context.Context) ([]T, bool, error)  // optional: returns first page items, hasMore, error
 }
 
 const defaultPageSize = 20
@@ -59,6 +62,7 @@ type TableView[T any] struct {
 	pageSize    int
 	hasMore     bool
 	loadingMore bool
+	cancel      context.CancelFunc
 }
 
 // NewTableView creates a new TableView from the given config.
@@ -155,10 +159,25 @@ func (v *TableView[T]) Init() tea.Cmd {
 }
 
 func (v *TableView[T]) fetchData() tea.Cmd {
+	if v.cancel != nil {
+		v.cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	v.cancel = cancel
 	id := v.viewID()
+	if v.config.FetchFuncPaged != nil {
+		fetch := v.config.FetchFuncPaged
+		return func() tea.Msg {
+			items, hasMore, err := fetch(ctx)
+			if err != nil {
+				return errViewMsg{err: err}
+			}
+			return tableDataMsg{viewID: id, items: items, hasMore: hasMore, paged: true}
+		}
+	}
 	fetch := v.config.FetchFunc
 	return func() tea.Msg {
-		items, err := fetch(context.Background())
+		items, err := fetch(ctx)
 		if err != nil {
 			return errViewMsg{err: err}
 		}
@@ -167,14 +186,26 @@ func (v *TableView[T]) fetchData() tea.Cmd {
 }
 
 func (v *TableView[T]) fetchMore() tea.Cmd {
+	if v.cancel != nil {
+		v.cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	v.cancel = cancel
 	id := v.viewID()
 	loadMore := v.config.LoadMoreFunc
 	return func() tea.Msg {
-		items, hasMore, err := loadMore(context.Background())
+		items, hasMore, err := loadMore(ctx)
 		if err != nil {
 			return errViewMsg{err: err}
 		}
 		return tableMoreDataMsg{viewID: id, items: items, hasMore: hasMore}
+	}
+}
+
+// Cancel cancels any in-flight fetch operation.
+func (v *TableView[T]) Cancel() {
+	if v.cancel != nil {
+		v.cancel()
 	}
 }
 
@@ -198,7 +229,9 @@ func (v *TableView[T]) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.displayRows = rows
 		v.currentPage = 0
 		v.applyPage()
-		if v.config.LoadMoreFunc != nil {
+		if msg.paged {
+			v.hasMore = msg.hasMore
+		} else if v.config.LoadMoreFunc != nil {
 			v.hasMore = true // assume more until first LoadMore returns hasMore=false
 		}
 		return v, nil

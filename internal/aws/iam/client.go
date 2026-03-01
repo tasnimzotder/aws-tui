@@ -286,3 +286,112 @@ func (c *Client) ListEntitiesForPolicy(ctx context.Context, policyARN string) ([
 
 	return entities, nil
 }
+
+// ListUsersPage fetches a single page of IAM users.
+func (c *Client) ListUsersPage(ctx context.Context, marker *string) ([]IAMUser, *string, error) {
+	out, err := c.api.ListUsers(ctx, &awsiam.ListUsersInput{
+		Marker: marker,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ListUsers: %w", err)
+	}
+
+	users := make([]IAMUser, 0, len(out.Users))
+	for _, u := range out.Users {
+		var createdAt time.Time
+		if u.CreateDate != nil {
+			createdAt = *u.CreateDate
+		}
+		users = append(users, IAMUser{
+			Name:      aws.ToString(u.UserName),
+			UserID:    aws.ToString(u.UserId),
+			ARN:       aws.ToString(u.Arn),
+			Path:      aws.ToString(u.Path),
+			CreatedAt: createdAt,
+		})
+	}
+
+	var nextMarker *string
+	if out.IsTruncated {
+		nextMarker = out.Marker
+	}
+	return users, nextMarker, nil
+}
+
+// ListRolesPage fetches a single page of IAM roles.
+func (c *Client) ListRolesPage(ctx context.Context, marker *string) ([]IAMRole, *string, error) {
+	out, err := c.api.ListRoles(ctx, &awsiam.ListRolesInput{
+		Marker: marker,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ListRoles: %w", err)
+	}
+
+	roles := make([]IAMRole, 0, len(out.Roles))
+	for _, r := range out.Roles {
+		var createdAt time.Time
+		if r.CreateDate != nil {
+			createdAt = *r.CreateDate
+		}
+		policyDoc := aws.ToString(r.AssumeRolePolicyDocument)
+		if decoded, err := url.QueryUnescape(policyDoc); err == nil {
+			policyDoc = decoded
+		}
+		roles = append(roles, IAMRole{
+			Name:                     aws.ToString(r.RoleName),
+			RoleID:                   aws.ToString(r.RoleId),
+			ARN:                      aws.ToString(r.Arn),
+			Path:                     aws.ToString(r.Path),
+			Description:              aws.ToString(r.Description),
+			CreatedAt:                createdAt,
+			AssumeRolePolicyDocument: policyDoc,
+		})
+	}
+
+	var nextMarker *string
+	if out.IsTruncated {
+		nextMarker = out.Marker
+	}
+	return roles, nextMarker, nil
+}
+
+// ListPoliciesPage fetches a single page of customer-managed IAM policies.
+func (c *Client) ListPoliciesPage(ctx context.Context, marker *string) ([]IAMPolicy, *string, error) {
+	out, err := c.api.ListPolicies(ctx, &awsiam.ListPoliciesInput{
+		Scope:  iamtypes.PolicyScopeTypeLocal,
+		Marker: marker,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ListPolicies: %w", err)
+	}
+
+	policies := make([]IAMPolicy, 0, len(out.Policies))
+	for _, p := range out.Policies {
+		var createdAt, updatedAt time.Time
+		if p.CreateDate != nil {
+			createdAt = *p.CreateDate
+		}
+		if p.UpdateDate != nil {
+			updatedAt = *p.UpdateDate
+		}
+		var attachmentCount int
+		if p.AttachmentCount != nil {
+			attachmentCount = int(*p.AttachmentCount)
+		}
+		policies = append(policies, IAMPolicy{
+			Name:            aws.ToString(p.PolicyName),
+			PolicyID:        aws.ToString(p.PolicyId),
+			ARN:             aws.ToString(p.Arn),
+			Path:            aws.ToString(p.Path),
+			AttachmentCount: attachmentCount,
+			CreatedAt:       createdAt,
+			UpdatedAt:       updatedAt,
+		})
+	}
+
+	var nextMarker *string
+	if out.IsTruncated {
+		nextMarker = out.Marker
+	}
+	return policies, nextMarker, nil
+}

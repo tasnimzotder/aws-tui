@@ -27,6 +27,7 @@ const (
 	HelpContextELBDetail
 	HelpContextVPC
 	HelpContextVPCDetail
+	HelpContextECSTaskDetail
 )
 
 type helpBinding struct {
@@ -44,6 +45,7 @@ func renderHelp(ctx HelpContext, width, height int) string {
 		bindings = []helpBinding{
 			{"Enter", "Select service"},
 			{"j/k", "Navigate up/down"},
+			{"R", "Switch region"},
 			{"?", "Toggle this help"},
 			{"q", "Quit"},
 		}
@@ -58,6 +60,7 @@ func renderHelp(ctx HelpContext, width, height int) string {
 			{"r", "Refresh data"},
 			{"c", "Copy ID"},
 			{"C", "Copy ARN"},
+			{"R", "Switch region"},
 			{"j/k", "Navigate up/down"},
 			{"Esc", "Go back"},
 			{"?", "Toggle this help"},
@@ -68,6 +71,20 @@ func renderHelp(ctx HelpContext, width, height int) string {
 		bindings = []helpBinding{
 			{"Tab/1/2", "Switch tabs"},
 			{"t", "Toggle log tailing"},
+			{"r", "Refresh data"},
+			{"c", "Copy ID"},
+			{"C", "Copy ARN"},
+			{"j/k", "Scroll up/down"},
+			{"Esc", "Go back"},
+			{"?", "Toggle this help"},
+			{"q", "Quit"},
+		}
+	case HelpContextECSTaskDetail:
+		title = "Keybindings — ECS Task"
+		bindings = []helpBinding{
+			{"Tab/1/2", "Switch tabs"},
+			{"t", "Toggle log tailing"},
+			{"x", "Exec into container"},
 			{"r", "Refresh data"},
 			{"c", "Copy ID"},
 			{"C", "Copy ARN"},

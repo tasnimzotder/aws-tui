@@ -71,6 +71,7 @@ func hintsForContext(ctx HelpContext) []keyHint {
 		return []keyHint{
 			{"Enter", "select"},
 			{"j/k", "navigate"},
+			{"R", "region"},
 			{"?", "help"},
 			{"q", "quit"},
 		}
@@ -82,11 +83,21 @@ func hintsForContext(ctx HelpContext) []keyHint {
 			{"r", "refresh"},
 			{"a", "auto-refresh"},
 			{"c", "copy"},
+			{"R", "region"},
 			{"?", "help"},
 		}
 	case HelpContextDetail:
 		return []keyHint{
 			{"Tab", "switch"},
+			{"r", "refresh"},
+			{"c", "copy"},
+			{"Esc", "back"},
+			{"?", "help"},
+		}
+	case HelpContextECSTaskDetail:
+		return []keyHint{
+			{"Tab", "switch"},
+			{"x", "exec"},
 			{"r", "refresh"},
 			{"c", "copy"},
 			{"Esc", "back"},

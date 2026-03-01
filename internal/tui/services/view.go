@@ -49,6 +49,12 @@ type RefreshableView interface {
 	Refresh() tea.Cmd
 }
 
+// CancellableView is implemented by views that manage in-flight requests.
+type CancellableView interface {
+	View
+	Cancel()
+}
+
 // errViewMsg is a shared message for async error reporting.
 type errViewMsg struct{ err error }
 

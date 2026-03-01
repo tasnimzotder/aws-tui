@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -153,9 +154,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PopViewMsg:
 		if len(m.stack) > 1 {
+			if cv, ok := m.stack[len(m.stack)-1].(CancellableView); ok {
+				cv.Cancel()
+			}
 			m.stack = m.stack[:len(m.stack)-1]
 		}
 		return m, nil
+
+	case regionChangeMsg:
+		// Cancel all in-flight requests
+		for _, v := range m.stack {
+			if cv, ok := v.(CancellableView); ok {
+				cv.Cancel()
+			}
+		}
+		// Create new service client with new region
+		newClient, err := awsclient.NewServiceClient(context.Background(), m.profile, msg.region)
+		if err != nil {
+			// Stay on current region if error
+			m.stack = m.stack[:1] // pop to root
+			return m, nil
+		}
+		m.client = newClient
+		m.region = msg.region
+		// Reset stack to fresh root view
+		root := NewRootView(m.client, m.profile, m.region)
+		m.stack = []View{root}
+		if m.width > 0 && m.height > 0 {
+			contentHeight := m.height - 8
+			if contentHeight < 3 {
+				contentHeight = 3
+			}
+			root.SetSize(m.width-6, contentHeight)
+		}
+		return m, root.Init()
 
 	case execDoneMsg:
 		// After tea.Exec returns from an interactive shell (e.g. kubectl exec),
@@ -171,6 +203,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				continue
 			}
 			if _, ok := top.(*ssmInputView); ok {
+				m.stack = m.stack[:len(m.stack)-1]
+				continue
+			}
+			if _, ok := top.(*ecsExecInputView); ok {
+				m.stack = m.stack[:len(m.stack)-1]
+				continue
+			}
+			if _, ok := top.(*ecsContainerPickerView); ok {
 				m.stack = m.stack[:len(m.stack)-1]
 				continue
 			}
@@ -346,6 +386,9 @@ func (m Model) updateNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "esc":
 		if len(m.stack) > 1 {
+			if cv, ok := m.stack[len(m.stack)-1].(CancellableView); ok {
+				cv.Cancel()
+			}
 			m.stack = m.stack[:len(m.stack)-1]
 			return m, nil
 		}
@@ -353,6 +396,9 @@ func (m Model) updateNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "backspace":
 		if len(m.stack) > 1 {
+			if cv, ok := m.stack[len(m.stack)-1].(CancellableView); ok {
+				cv.Cancel()
+			}
 			m.stack = m.stack[:len(m.stack)-1]
 			return m, nil
 		}
@@ -374,6 +420,8 @@ func (m Model) updateNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.showHelp = true
 		return m, nil
+	case "R":
+		return m, pushView(newRegionPickerView())
 	case "c":
 		if cv, ok := m.currentCopyable(); ok {
 			id := cv.CopyID()

@@ -274,7 +274,9 @@ func (c *Client) DescribeTask(ctx context.Context, clusterName, taskARN string) 
 	// Get log configuration and environment from task definition
 	logConfigs := map[string][2]string{}
 	envConfigs := map[string][]EnvVar{}
-	tdOut, err := c.api.DescribeTaskDefinition(ctx, &awsecs.DescribeTaskDefinitionInput{
+	tdCtx, tdCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer tdCancel()
+	tdOut, err := c.api.DescribeTaskDefinition(tdCtx, &awsecs.DescribeTaskDefinitionInput{
 		TaskDefinition: aws.String(taskDef),
 	})
 	if err == nil && tdOut.TaskDefinition != nil {
@@ -381,4 +383,124 @@ func (c *Client) DescribeService(ctx context.Context, clusterName, serviceName s
 	}
 
 	return detail, nil
+}
+
+// ListClustersPage fetches a single page of ECS cluster ARNs and describes them.
+func (c *Client) ListClustersPage(ctx context.Context, token *string) ([]ECSCluster, *string, error) {
+	listOut, err := c.api.ListClusters(ctx, &awsecs.ListClustersInput{
+		NextToken: token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ListClusters: %w", err)
+	}
+
+	if len(listOut.ClusterArns) == 0 {
+		return nil, nil, nil
+	}
+
+	descOut, err := c.api.DescribeClusters(ctx, &awsecs.DescribeClustersInput{
+		Clusters: listOut.ClusterArns,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("DescribeClusters: %w", err)
+	}
+
+	clusters := make([]ECSCluster, 0, len(descOut.Clusters))
+	for _, cl := range descOut.Clusters {
+		clusters = append(clusters, ECSCluster{
+			Name:             aws.ToString(cl.ClusterName),
+			ARN:              aws.ToString(cl.ClusterArn),
+			Status:           aws.ToString(cl.Status),
+			RunningTaskCount: int(cl.RunningTasksCount),
+			ServiceCount:     int(cl.ActiveServicesCount),
+		})
+	}
+	return clusters, listOut.NextToken, nil
+}
+
+// ListServicesPage fetches a single page of ECS services and describes them.
+func (c *Client) ListServicesPage(ctx context.Context, clusterName string, token *string) ([]ECSService, *string, error) {
+	listOut, err := c.api.ListServices(ctx, &awsecs.ListServicesInput{
+		Cluster:   aws.String(clusterName),
+		NextToken: token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ListServices: %w", err)
+	}
+
+	if len(listOut.ServiceArns) == 0 {
+		return nil, nil, nil
+	}
+
+	// DescribeServices supports max 10 at a time
+	var services []ECSService
+	for i := 0; i < len(listOut.ServiceArns); i += 10 {
+		end := min(i+10, len(listOut.ServiceArns))
+		descOut, err := c.api.DescribeServices(ctx, &awsecs.DescribeServicesInput{
+			Cluster:  aws.String(clusterName),
+			Services: listOut.ServiceArns[i:end],
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("DescribeServices: %w", err)
+		}
+		for _, svc := range descOut.Services {
+			taskDef := utils.ShortName(aws.ToString(svc.TaskDefinition))
+			services = append(services, ECSService{
+				Name:         aws.ToString(svc.ServiceName),
+				ARN:          aws.ToString(svc.ServiceArn),
+				Status:       aws.ToString(svc.Status),
+				DesiredCount: int(svc.DesiredCount),
+				RunningCount: int(svc.RunningCount),
+				PendingCount: int(svc.PendingCount),
+				TaskDef:      taskDef,
+			})
+		}
+	}
+	return services, listOut.NextToken, nil
+}
+
+// ListTasksPage fetches a single page of ECS tasks and describes them.
+func (c *Client) ListTasksPage(ctx context.Context, clusterName, serviceName string, token *string) ([]ECSTask, *string, error) {
+	listOut, err := c.api.ListTasks(ctx, &awsecs.ListTasksInput{
+		Cluster:     aws.String(clusterName),
+		ServiceName: aws.String(serviceName),
+		NextToken:   token,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ListTasks: %w", err)
+	}
+
+	if len(listOut.TaskArns) == 0 {
+		return nil, nil, nil
+	}
+
+	descOut, err := c.api.DescribeTasks(ctx, &awsecs.DescribeTasksInput{
+		Cluster: aws.String(clusterName),
+		Tasks:   listOut.TaskArns,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("DescribeTasks: %w", err)
+	}
+
+	tasks := make([]ECSTask, 0, len(descOut.Tasks))
+	for _, t := range descOut.Tasks {
+		taskARN := aws.ToString(t.TaskArn)
+		taskID := utils.ShortName(taskARN)
+		taskDef := utils.ShortName(aws.ToString(t.TaskDefinitionArn))
+
+		var startedAt time.Time
+		if t.StartedAt != nil {
+			startedAt = *t.StartedAt
+		}
+
+		tasks = append(tasks, ECSTask{
+			TaskID:       taskID,
+			ARN:          aws.ToString(t.TaskArn),
+			Status:       aws.ToString(t.LastStatus),
+			TaskDef:      taskDef,
+			StartedAt:    startedAt,
+			HealthStatus: string(t.HealthStatus),
+		})
+	}
+	return tasks, listOut.NextToken, nil
 }
