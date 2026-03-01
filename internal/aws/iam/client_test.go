@@ -334,3 +334,439 @@ func TestListEntitiesForPolicy(t *testing.T) {
 		t.Errorf("entities[2] = {%s, %s}, want {lambda-role, Role}", entities[2].Name, entities[2].Type)
 	}
 }
+
+func TestListUsersPage(t *testing.T) {
+	created := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name           string
+		inMarker       *string
+		apiOut         *awsiam.ListUsersOutput
+		wantLen        int
+		wantUsers      []IAMUser
+		wantNextMarker *string
+	}{
+		{
+			name:     "single page no marker",
+			inMarker: nil,
+			apiOut: &awsiam.ListUsersOutput{
+				Users: []iamtypes.User{
+					{
+						UserName:   awssdk.String("alice"),
+						UserId:     awssdk.String("AIDA1234"),
+						Arn:        awssdk.String("arn:aws:iam::123456789012:user/alice"),
+						Path:       awssdk.String("/"),
+						CreateDate: &created,
+					},
+				},
+				IsTruncated: false,
+			},
+			wantLen: 1,
+			wantUsers: []IAMUser{
+				{Name: "alice", UserID: "AIDA1234", ARN: "arn:aws:iam::123456789012:user/alice", Path: "/", CreatedAt: created},
+			},
+			wantNextMarker: nil,
+		},
+		{
+			name:     "first page with more results",
+			inMarker: nil,
+			apiOut: &awsiam.ListUsersOutput{
+				Users: []iamtypes.User{
+					{
+						UserName:   awssdk.String("bob"),
+						UserId:     awssdk.String("AIDA5678"),
+						Arn:        awssdk.String("arn:aws:iam::123456789012:user/bob"),
+						Path:       awssdk.String("/"),
+						CreateDate: &created,
+					},
+				},
+				IsTruncated: true,
+				Marker:      awssdk.String("token-page2"),
+			},
+			wantLen: 1,
+			wantUsers: []IAMUser{
+				{Name: "bob", UserID: "AIDA5678", ARN: "arn:aws:iam::123456789012:user/bob", Path: "/", CreatedAt: created},
+			},
+			wantNextMarker: awssdk.String("token-page2"),
+		},
+		{
+			name:     "subsequent page marker in last page",
+			inMarker: awssdk.String("token-page2"),
+			apiOut: &awsiam.ListUsersOutput{
+				Users: []iamtypes.User{
+					{
+						UserName:   awssdk.String("carol"),
+						UserId:     awssdk.String("AIDA9999"),
+						Arn:        awssdk.String("arn:aws:iam::123456789012:user/carol"),
+						Path:       awssdk.String("/"),
+						CreateDate: &created,
+					},
+				},
+				IsTruncated: false,
+			},
+			wantLen: 1,
+			wantUsers: []IAMUser{
+				{Name: "carol", UserID: "AIDA9999", ARN: "arn:aws:iam::123456789012:user/carol", Path: "/", CreatedAt: created},
+			},
+			wantNextMarker: nil,
+		},
+		{
+			name:     "empty results",
+			inMarker: nil,
+			apiOut: &awsiam.ListUsersOutput{
+				Users:       []iamtypes.User{},
+				IsTruncated: false,
+			},
+			wantLen:        0,
+			wantUsers:      []IAMUser{},
+			wantNextMarker: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockIAMAPI{
+				listUsersFunc: func(ctx context.Context, params *awsiam.ListUsersInput, optFns ...func(*awsiam.Options)) (*awsiam.ListUsersOutput, error) {
+					if awssdk.ToString(params.Marker) != awssdk.ToString(tt.inMarker) {
+						t.Errorf("Marker = %v, want %v", params.Marker, tt.inMarker)
+					}
+					return tt.apiOut, nil
+				},
+			}
+
+			client := NewClient(mock)
+			users, nextMarker, err := client.ListUsersPage(context.Background(), tt.inMarker)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(users) != tt.wantLen {
+				t.Fatalf("len(users) = %d, want %d", len(users), tt.wantLen)
+			}
+			for i, want := range tt.wantUsers {
+				got := users[i]
+				if got.Name != want.Name {
+					t.Errorf("users[%d].Name = %s, want %s", i, got.Name, want.Name)
+				}
+				if got.UserID != want.UserID {
+					t.Errorf("users[%d].UserID = %s, want %s", i, got.UserID, want.UserID)
+				}
+				if got.ARN != want.ARN {
+					t.Errorf("users[%d].ARN = %s, want %s", i, got.ARN, want.ARN)
+				}
+				if got.Path != want.Path {
+					t.Errorf("users[%d].Path = %s, want %s", i, got.Path, want.Path)
+				}
+				if !got.CreatedAt.Equal(want.CreatedAt) {
+					t.Errorf("users[%d].CreatedAt = %v, want %v", i, got.CreatedAt, want.CreatedAt)
+				}
+			}
+			if awssdk.ToString(nextMarker) != awssdk.ToString(tt.wantNextMarker) {
+				t.Errorf("nextMarker = %v, want %v", nextMarker, tt.wantNextMarker)
+			}
+		})
+	}
+}
+
+func TestListRolesPage(t *testing.T) {
+	created := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name           string
+		inMarker       *string
+		apiOut         *awsiam.ListRolesOutput
+		wantLen        int
+		wantRoles      []IAMRole
+		wantNextMarker *string
+	}{
+		{
+			name:     "single page no marker",
+			inMarker: nil,
+			apiOut: &awsiam.ListRolesOutput{
+				Roles: []iamtypes.Role{
+					{
+						RoleName:                 awssdk.String("my-role"),
+						RoleId:                   awssdk.String("AROA1234"),
+						Arn:                      awssdk.String("arn:aws:iam::123456789012:role/my-role"),
+						Path:                     awssdk.String("/"),
+						Description:              awssdk.String("A test role"),
+						CreateDate:               &created,
+						AssumeRolePolicyDocument: awssdk.String("%7B%22Version%22%3A%222012-10-17%22%7D"),
+					},
+				},
+				IsTruncated: false,
+			},
+			wantLen: 1,
+			wantRoles: []IAMRole{
+				{
+					Name:                     "my-role",
+					RoleID:                   "AROA1234",
+					ARN:                      "arn:aws:iam::123456789012:role/my-role",
+					Path:                     "/",
+					Description:              "A test role",
+					CreatedAt:                created,
+					AssumeRolePolicyDocument: `{"Version":"2012-10-17"}`,
+				},
+			},
+			wantNextMarker: nil,
+		},
+		{
+			name:     "first page with more results",
+			inMarker: nil,
+			apiOut: &awsiam.ListRolesOutput{
+				Roles: []iamtypes.Role{
+					{
+						RoleName:   awssdk.String("role-a"),
+						RoleId:     awssdk.String("AROA0001"),
+						Arn:        awssdk.String("arn:aws:iam::123456789012:role/role-a"),
+						Path:       awssdk.String("/"),
+						CreateDate: &created,
+					},
+				},
+				IsTruncated: true,
+				Marker:      awssdk.String("token-roles-page2"),
+			},
+			wantLen: 1,
+			wantRoles: []IAMRole{
+				{Name: "role-a", RoleID: "AROA0001", ARN: "arn:aws:iam::123456789012:role/role-a", Path: "/", CreatedAt: created},
+			},
+			wantNextMarker: awssdk.String("token-roles-page2"),
+		},
+		{
+			name:     "subsequent page marker in last page",
+			inMarker: awssdk.String("token-roles-page2"),
+			apiOut: &awsiam.ListRolesOutput{
+				Roles: []iamtypes.Role{
+					{
+						RoleName:   awssdk.String("role-b"),
+						RoleId:     awssdk.String("AROA0002"),
+						Arn:        awssdk.String("arn:aws:iam::123456789012:role/role-b"),
+						Path:       awssdk.String("/svc/"),
+						CreateDate: &created,
+					},
+				},
+				IsTruncated: false,
+			},
+			wantLen: 1,
+			wantRoles: []IAMRole{
+				{Name: "role-b", RoleID: "AROA0002", ARN: "arn:aws:iam::123456789012:role/role-b", Path: "/svc/", CreatedAt: created},
+			},
+			wantNextMarker: nil,
+		},
+		{
+			name:     "empty results",
+			inMarker: nil,
+			apiOut: &awsiam.ListRolesOutput{
+				Roles:       []iamtypes.Role{},
+				IsTruncated: false,
+			},
+			wantLen:        0,
+			wantRoles:      []IAMRole{},
+			wantNextMarker: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockIAMAPI{
+				listRolesFunc: func(ctx context.Context, params *awsiam.ListRolesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListRolesOutput, error) {
+					if awssdk.ToString(params.Marker) != awssdk.ToString(tt.inMarker) {
+						t.Errorf("Marker = %v, want %v", params.Marker, tt.inMarker)
+					}
+					return tt.apiOut, nil
+				},
+			}
+
+			client := NewClient(mock)
+			roles, nextMarker, err := client.ListRolesPage(context.Background(), tt.inMarker)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(roles) != tt.wantLen {
+				t.Fatalf("len(roles) = %d, want %d", len(roles), tt.wantLen)
+			}
+			for i, want := range tt.wantRoles {
+				got := roles[i]
+				if got.Name != want.Name {
+					t.Errorf("roles[%d].Name = %s, want %s", i, got.Name, want.Name)
+				}
+				if got.RoleID != want.RoleID {
+					t.Errorf("roles[%d].RoleID = %s, want %s", i, got.RoleID, want.RoleID)
+				}
+				if got.ARN != want.ARN {
+					t.Errorf("roles[%d].ARN = %s, want %s", i, got.ARN, want.ARN)
+				}
+				if got.Path != want.Path {
+					t.Errorf("roles[%d].Path = %s, want %s", i, got.Path, want.Path)
+				}
+				if got.Description != want.Description {
+					t.Errorf("roles[%d].Description = %s, want %s", i, got.Description, want.Description)
+				}
+				if !got.CreatedAt.Equal(want.CreatedAt) {
+					t.Errorf("roles[%d].CreatedAt = %v, want %v", i, got.CreatedAt, want.CreatedAt)
+				}
+				if want.AssumeRolePolicyDocument != "" && got.AssumeRolePolicyDocument != want.AssumeRolePolicyDocument {
+					t.Errorf("roles[%d].AssumeRolePolicyDocument = %s, want %s", i, got.AssumeRolePolicyDocument, want.AssumeRolePolicyDocument)
+				}
+			}
+			if awssdk.ToString(nextMarker) != awssdk.ToString(tt.wantNextMarker) {
+				t.Errorf("nextMarker = %v, want %v", nextMarker, tt.wantNextMarker)
+			}
+		})
+	}
+}
+
+func TestListPoliciesPage(t *testing.T) {
+	created := time.Date(2025, 2, 15, 0, 0, 0, 0, time.UTC)
+	updated := time.Date(2025, 4, 20, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name           string
+		inMarker       *string
+		apiOut         *awsiam.ListPoliciesOutput
+		wantLen        int
+		wantPolicies   []IAMPolicy
+		wantNextMarker *string
+	}{
+		{
+			name:     "single page no marker",
+			inMarker: nil,
+			apiOut: &awsiam.ListPoliciesOutput{
+				Policies: []iamtypes.Policy{
+					{
+						PolicyName:      awssdk.String("my-policy"),
+						PolicyId:        awssdk.String("ANPA1234"),
+						Arn:             awssdk.String("arn:aws:iam::123456789012:policy/my-policy"),
+						Path:            awssdk.String("/"),
+						AttachmentCount: awssdk.Int32(3),
+						CreateDate:      &created,
+						UpdateDate:      &updated,
+					},
+				},
+				IsTruncated: false,
+			},
+			wantLen: 1,
+			wantPolicies: []IAMPolicy{
+				{
+					Name:            "my-policy",
+					PolicyID:        "ANPA1234",
+					ARN:             "arn:aws:iam::123456789012:policy/my-policy",
+					Path:            "/",
+					AttachmentCount: 3,
+					CreatedAt:       created,
+					UpdatedAt:       updated,
+				},
+			},
+			wantNextMarker: nil,
+		},
+		{
+			name:     "first page with more results",
+			inMarker: nil,
+			apiOut: &awsiam.ListPoliciesOutput{
+				Policies: []iamtypes.Policy{
+					{
+						PolicyName:      awssdk.String("policy-a"),
+						PolicyId:        awssdk.String("ANPA0001"),
+						Arn:             awssdk.String("arn:aws:iam::123456789012:policy/policy-a"),
+						Path:            awssdk.String("/"),
+						AttachmentCount: awssdk.Int32(1),
+						CreateDate:      &created,
+						UpdateDate:      &updated,
+					},
+				},
+				IsTruncated: true,
+				Marker:      awssdk.String("token-policies-page2"),
+			},
+			wantLen: 1,
+			wantPolicies: []IAMPolicy{
+				{Name: "policy-a", PolicyID: "ANPA0001", ARN: "arn:aws:iam::123456789012:policy/policy-a", Path: "/", AttachmentCount: 1, CreatedAt: created, UpdatedAt: updated},
+			},
+			wantNextMarker: awssdk.String("token-policies-page2"),
+		},
+		{
+			name:     "subsequent page marker in last page",
+			inMarker: awssdk.String("token-policies-page2"),
+			apiOut: &awsiam.ListPoliciesOutput{
+				Policies: []iamtypes.Policy{
+					{
+						PolicyName:      awssdk.String("policy-b"),
+						PolicyId:        awssdk.String("ANPA0002"),
+						Arn:             awssdk.String("arn:aws:iam::123456789012:policy/policy-b"),
+						Path:            awssdk.String("/ops/"),
+						AttachmentCount: awssdk.Int32(0),
+						CreateDate:      &created,
+						UpdateDate:      &updated,
+					},
+				},
+				IsTruncated: false,
+			},
+			wantLen: 1,
+			wantPolicies: []IAMPolicy{
+				{Name: "policy-b", PolicyID: "ANPA0002", ARN: "arn:aws:iam::123456789012:policy/policy-b", Path: "/ops/", AttachmentCount: 0, CreatedAt: created, UpdatedAt: updated},
+			},
+			wantNextMarker: nil,
+		},
+		{
+			name:     "empty results",
+			inMarker: nil,
+			apiOut: &awsiam.ListPoliciesOutput{
+				Policies:    []iamtypes.Policy{},
+				IsTruncated: false,
+			},
+			wantLen:        0,
+			wantPolicies:   []IAMPolicy{},
+			wantNextMarker: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockIAMAPI{
+				listPoliciesFunc: func(ctx context.Context, params *awsiam.ListPoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListPoliciesOutput, error) {
+					if params.Scope != iamtypes.PolicyScopeTypeLocal {
+						t.Errorf("Scope = %s, want Local", params.Scope)
+					}
+					if awssdk.ToString(params.Marker) != awssdk.ToString(tt.inMarker) {
+						t.Errorf("Marker = %v, want %v", params.Marker, tt.inMarker)
+					}
+					return tt.apiOut, nil
+				},
+			}
+
+			client := NewClient(mock)
+			policies, nextMarker, err := client.ListPoliciesPage(context.Background(), tt.inMarker)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(policies) != tt.wantLen {
+				t.Fatalf("len(policies) = %d, want %d", len(policies), tt.wantLen)
+			}
+			for i, want := range tt.wantPolicies {
+				got := policies[i]
+				if got.Name != want.Name {
+					t.Errorf("policies[%d].Name = %s, want %s", i, got.Name, want.Name)
+				}
+				if got.PolicyID != want.PolicyID {
+					t.Errorf("policies[%d].PolicyID = %s, want %s", i, got.PolicyID, want.PolicyID)
+				}
+				if got.ARN != want.ARN {
+					t.Errorf("policies[%d].ARN = %s, want %s", i, got.ARN, want.ARN)
+				}
+				if got.Path != want.Path {
+					t.Errorf("policies[%d].Path = %s, want %s", i, got.Path, want.Path)
+				}
+				if got.AttachmentCount != want.AttachmentCount {
+					t.Errorf("policies[%d].AttachmentCount = %d, want %d", i, got.AttachmentCount, want.AttachmentCount)
+				}
+				if !got.CreatedAt.Equal(want.CreatedAt) {
+					t.Errorf("policies[%d].CreatedAt = %v, want %v", i, got.CreatedAt, want.CreatedAt)
+				}
+				if !got.UpdatedAt.Equal(want.UpdatedAt) {
+					t.Errorf("policies[%d].UpdatedAt = %v, want %v", i, got.UpdatedAt, want.UpdatedAt)
+				}
+			}
+			if awssdk.ToString(nextMarker) != awssdk.ToString(tt.wantNextMarker) {
+				t.Errorf("nextMarker = %v, want %v", nextMarker, tt.wantNextMarker)
+			}
+		})
+	}
+}

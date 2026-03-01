@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"os"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
@@ -21,13 +20,14 @@ func NewCostCmd() *cobra.Command {
 		Use:   "cost",
 		Short: "Show AWS cost dashboard",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
 			profile, _ = cfg.Merge(profile, "")
 
-			ctx := context.Background()
 			awsCfg, err := awsclient.LoadConfig(ctx, profile, "")
 			if err != nil {
 				return fmt.Errorf("loading AWS config: %w", err)
@@ -37,10 +37,12 @@ func NewCostCmd() *cobra.Command {
 			client := awscost.NewClient(awsCfg)
 
 			model := tui.NewModel(client, profile, accountID)
-			p := tea.NewProgram(model)
+			p := tea.NewProgram(model, tea.WithContext(ctx))
 			if _, err := p.Run(); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
+				if errors.Is(err, tea.ErrInterrupted) || ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("running TUI: %w", err)
 			}
 			return nil
 		},

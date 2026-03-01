@@ -502,6 +502,115 @@ func TestListAccessEntries(t *testing.T) {
 	}
 }
 
+func TestListClustersPage(t *testing.T) {
+	tests := []struct {
+		name          string
+		inputToken    *string
+		listNames     []string
+		listNextToken *string
+		describeFn    func(ctx context.Context, params *awseks.DescribeClusterInput, optFns ...func(*awseks.Options)) (*awseks.DescribeClusterOutput, error)
+		wantCount     int
+		wantNextToken *string
+	}{
+		{
+			name:          "single page nil token in nil token out",
+			inputToken:    nil,
+			listNames:     []string{"my-cluster"},
+			listNextToken: nil,
+			describeFn: func(ctx context.Context, params *awseks.DescribeClusterInput, optFns ...func(*awseks.Options)) (*awseks.DescribeClusterOutput, error) {
+				return &awseks.DescribeClusterOutput{
+					Cluster: &ekstypes.Cluster{
+						Name:    params.Name,
+						Arn:     awssdk.String("arn:aws:eks:us-east-1:123456789012:cluster/" + awssdk.ToString(params.Name)),
+						Status:  ekstypes.ClusterStatusActive,
+						Version: awssdk.String("1.28"),
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: nil,
+		},
+		{
+			name:          "first page with more pages token returned",
+			inputToken:    nil,
+			listNames:     []string{"cluster-a"},
+			listNextToken: awssdk.String("eks-page2"),
+			describeFn: func(ctx context.Context, params *awseks.DescribeClusterInput, optFns ...func(*awseks.Options)) (*awseks.DescribeClusterOutput, error) {
+				return &awseks.DescribeClusterOutput{
+					Cluster: &ekstypes.Cluster{
+						Name:    params.Name,
+						Arn:     awssdk.String("arn:aws:eks:us-east-1:123456789012:cluster/" + awssdk.ToString(params.Name)),
+						Status:  ekstypes.ClusterStatusActive,
+						Version: awssdk.String("1.29"),
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: awssdk.String("eks-page2"),
+		},
+		{
+			name:          "subsequent page token in nil token out",
+			inputToken:    awssdk.String("eks-page2"),
+			listNames:     []string{"cluster-b"},
+			listNextToken: nil,
+			describeFn: func(ctx context.Context, params *awseks.DescribeClusterInput, optFns ...func(*awseks.Options)) (*awseks.DescribeClusterOutput, error) {
+				return &awseks.DescribeClusterOutput{
+					Cluster: &ekstypes.Cluster{
+						Name:    params.Name,
+						Arn:     awssdk.String("arn:aws:eks:us-east-1:123456789012:cluster/" + awssdk.ToString(params.Name)),
+						Status:  ekstypes.ClusterStatusActive,
+						Version: awssdk.String("1.29"),
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: nil,
+		},
+		{
+			name:          "empty results",
+			inputToken:    nil,
+			listNames:     []string{},
+			listNextToken: nil,
+			describeFn:    nil,
+			wantCount:     0,
+			wantNextToken: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockEKSAPI{
+				listClustersFunc: func(ctx context.Context, params *awseks.ListClustersInput, optFns ...func(*awseks.Options)) (*awseks.ListClustersOutput, error) {
+					return &awseks.ListClustersOutput{
+						Clusters:  tt.listNames,
+						NextToken: tt.listNextToken,
+					}, nil
+				},
+				describeClusterFunc: tt.describeFn,
+			}
+
+			client := NewClient(mock)
+			clusters, nextToken, err := client.ListClustersPage(context.Background(), tt.inputToken)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(clusters) != tt.wantCount {
+				t.Errorf("len(clusters) = %d, want %d", len(clusters), tt.wantCount)
+			}
+			if tt.wantNextToken == nil && nextToken != nil {
+				t.Errorf("nextToken = %s, want nil", *nextToken)
+			}
+			if tt.wantNextToken != nil {
+				if nextToken == nil {
+					t.Errorf("nextToken = nil, want %s", *tt.wantNextToken)
+				} else if *nextToken != *tt.wantNextToken {
+					t.Errorf("nextToken = %s, want %s", *nextToken, *tt.wantNextToken)
+				}
+			}
+		})
+	}
+}
+
 func TestDescribeCluster(t *testing.T) {
 	created := time.Date(2025, 3, 10, 8, 0, 0, 0, time.UTC)
 

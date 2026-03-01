@@ -1,10 +1,9 @@
 package cmd
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/go-logr/logr"
@@ -24,6 +23,8 @@ func NewServicesCmd() *cobra.Command {
 		Use:   "services",
 		Short: "Browse AWS services (EC2, ECS, VPC, ECR)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			// Suppress all klog/client-go stderr output to prevent TUI corruption.
 			// Must use SetLogger for the structured logger, plus SetOutput for legacy paths.
 			klog.SetLogger(logr.Discard())
@@ -36,16 +37,18 @@ func NewServicesCmd() *cobra.Command {
 			}
 			profile, region = cfg.Merge(profile, region)
 
-			client, err := awsclient.NewServiceClient(context.Background(), profile, region)
+			client, err := awsclient.NewServiceClient(ctx, profile, region)
 			if err != nil {
 				return fmt.Errorf("initializing AWS client: %w", err)
 			}
 
 			model := services.NewModel(client, profile, region, cfg)
-			p := tea.NewProgram(model)
+			p := tea.NewProgram(model, tea.WithContext(ctx))
 			if _, err := p.Run(); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
+				if errors.Is(err, tea.ErrInterrupted) || ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("running TUI: %w", err)
 			}
 			return nil
 		},

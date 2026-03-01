@@ -225,3 +225,127 @@ func TestGetInstanceVolumes_Empty(t *testing.T) {
 		t.Errorf("expected 0 volumes, got %d", len(vols))
 	}
 }
+
+func TestListInstancesPage(t *testing.T) {
+	tt := []struct {
+		name           string
+		inputToken     *string
+		mockReservations []types.Reservation
+		mockNextToken  *string
+		wantLen        int
+		wantNextToken  *string
+		wantRunning    int
+		wantStopped    int
+		wantTotal      int
+		wantInstanceID string
+	}{
+		{
+			name:       "single page no next token",
+			inputToken: nil,
+			mockReservations: []types.Reservation{
+				{
+					Instances: []types.Instance{
+						{
+							InstanceId:       awssdk.String("i-single"),
+							InstanceType:     types.InstanceTypeT3Medium,
+							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
+							PrivateIpAddress: awssdk.String("10.0.1.10"),
+							Tags:             []types.Tag{{Key: awssdk.String("Name"), Value: awssdk.String("web")}},
+						},
+					},
+				},
+			},
+			mockNextToken:  nil,
+			wantLen:        1,
+			wantNextToken:  nil,
+			wantRunning:    1,
+			wantStopped:    0,
+			wantTotal:      1,
+			wantInstanceID: "i-single",
+		},
+		{
+			name:       "first page with more results",
+			inputToken: nil,
+			mockReservations: []types.Reservation{
+				{
+					Instances: []types.Instance{
+						{
+							InstanceId:       awssdk.String("i-page1a"),
+							InstanceType:     types.InstanceTypeT3Small,
+							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
+							PrivateIpAddress: awssdk.String("10.0.2.10"),
+						},
+						{
+							InstanceId:       awssdk.String("i-page1b"),
+							InstanceType:     types.InstanceTypeT3Micro,
+							State:            &types.InstanceState{Name: types.InstanceStateNameStopped},
+							PrivateIpAddress: awssdk.String("10.0.2.11"),
+						},
+					},
+				},
+			},
+			mockNextToken:  awssdk.String("instances-page2"),
+			wantLen:        2,
+			wantNextToken:  awssdk.String("instances-page2"),
+			wantRunning:    1,
+			wantStopped:    1,
+			wantTotal:      2,
+			wantInstanceID: "i-page1a",
+		},
+		{
+			name:             "empty results",
+			inputToken:       nil,
+			mockReservations: []types.Reservation{},
+			mockNextToken:    nil,
+			wantLen:          0,
+			wantNextToken:    nil,
+			wantRunning:      0,
+			wantStopped:      0,
+			wantTotal:        0,
+			wantInstanceID:   "",
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockEC2API{
+				describeInstancesFunc: func(ctx context.Context, params *awsec2.DescribeInstancesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeInstancesOutput, error) {
+					return &awsec2.DescribeInstancesOutput{
+						Reservations: tc.mockReservations,
+						NextToken:    tc.mockNextToken,
+					}, nil
+				},
+			}
+			client := NewClient(mock)
+			instances, summary, nextToken, err := client.ListInstancesPage(context.Background(), tc.inputToken)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(instances) != tc.wantLen {
+				t.Errorf("len(instances) = %d, want %d", len(instances), tc.wantLen)
+			}
+			if summary.Running != tc.wantRunning {
+				t.Errorf("summary.Running = %d, want %d", summary.Running, tc.wantRunning)
+			}
+			if summary.Stopped != tc.wantStopped {
+				t.Errorf("summary.Stopped = %d, want %d", summary.Stopped, tc.wantStopped)
+			}
+			if summary.Total != tc.wantTotal {
+				t.Errorf("summary.Total = %d, want %d", summary.Total, tc.wantTotal)
+			}
+			if tc.wantNextToken == nil && nextToken != nil {
+				t.Errorf("nextToken = %s, want nil", *nextToken)
+			}
+			if tc.wantNextToken != nil {
+				if nextToken == nil {
+					t.Errorf("nextToken = nil, want %s", *tc.wantNextToken)
+				} else if *nextToken != *tc.wantNextToken {
+					t.Errorf("nextToken = %s, want %s", *nextToken, *tc.wantNextToken)
+				}
+			}
+			if tc.wantInstanceID != "" && len(instances) > 0 && instances[0].InstanceID != tc.wantInstanceID {
+				t.Errorf("instances[0].InstanceID = %s, want %s", instances[0].InstanceID, tc.wantInstanceID)
+			}
+		})
+	}
+}

@@ -165,6 +165,370 @@ func TestListServices_PendingCount(t *testing.T) {
 	}
 }
 
+func TestListClustersPage(t *testing.T) {
+	tests := []struct {
+		name          string
+		inputToken    *string
+		listARNs      []string
+		listNextToken *string
+		describeFn    func(ctx context.Context, params *awsecs.DescribeClustersInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeClustersOutput, error)
+		wantCount     int
+		wantNextToken *string
+	}{
+		{
+			name:          "single page nil token in nil token out",
+			inputToken:    nil,
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:cluster/prod"},
+			listNextToken: nil,
+			describeFn: func(ctx context.Context, params *awsecs.DescribeClustersInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeClustersOutput, error) {
+				return &awsecs.DescribeClustersOutput{
+					Clusters: []ecstypes.Cluster{
+						{
+							ClusterName:         awssdk.String("prod"),
+							ClusterArn:          awssdk.String("arn:aws:ecs:us-east-1:123456:cluster/prod"),
+							Status:              awssdk.String("ACTIVE"),
+							RunningTasksCount:   3,
+							ActiveServicesCount: 1,
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: nil,
+		},
+		{
+			name:          "first page with more pages token returned",
+			inputToken:    nil,
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:cluster/c1"},
+			listNextToken: awssdk.String("page2"),
+			describeFn: func(ctx context.Context, params *awsecs.DescribeClustersInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeClustersOutput, error) {
+				return &awsecs.DescribeClustersOutput{
+					Clusters: []ecstypes.Cluster{
+						{
+							ClusterName: awssdk.String("c1"),
+							ClusterArn:  awssdk.String("arn:aws:ecs:us-east-1:123456:cluster/c1"),
+							Status:      awssdk.String("ACTIVE"),
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: awssdk.String("page2"),
+		},
+		{
+			name:          "subsequent page token in nil token out",
+			inputToken:    awssdk.String("page2"),
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:cluster/c2"},
+			listNextToken: nil,
+			describeFn: func(ctx context.Context, params *awsecs.DescribeClustersInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeClustersOutput, error) {
+				return &awsecs.DescribeClustersOutput{
+					Clusters: []ecstypes.Cluster{
+						{
+							ClusterName: awssdk.String("c2"),
+							ClusterArn:  awssdk.String("arn:aws:ecs:us-east-1:123456:cluster/c2"),
+							Status:      awssdk.String("ACTIVE"),
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: nil,
+		},
+		{
+			name:          "empty results",
+			inputToken:    nil,
+			listARNs:      []string{},
+			listNextToken: nil,
+			describeFn:    nil,
+			wantCount:     0,
+			wantNextToken: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockECSAPI{
+				listClustersFunc: func(ctx context.Context, params *awsecs.ListClustersInput, optFns ...func(*awsecs.Options)) (*awsecs.ListClustersOutput, error) {
+					return &awsecs.ListClustersOutput{
+						ClusterArns: tt.listARNs,
+						NextToken:   tt.listNextToken,
+					}, nil
+				},
+				describeClustersFunc: tt.describeFn,
+			}
+
+			client := NewClient(mock)
+			clusters, nextToken, err := client.ListClustersPage(context.Background(), tt.inputToken)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(clusters) != tt.wantCount {
+				t.Errorf("len(clusters) = %d, want %d", len(clusters), tt.wantCount)
+			}
+			if tt.wantNextToken == nil && nextToken != nil {
+				t.Errorf("nextToken = %s, want nil", *nextToken)
+			}
+			if tt.wantNextToken != nil {
+				if nextToken == nil {
+					t.Errorf("nextToken = nil, want %s", *tt.wantNextToken)
+				} else if *nextToken != *tt.wantNextToken {
+					t.Errorf("nextToken = %s, want %s", *nextToken, *tt.wantNextToken)
+				}
+			}
+		})
+	}
+}
+
+func TestListServicesPage(t *testing.T) {
+	tests := []struct {
+		name          string
+		cluster       string
+		inputToken    *string
+		listARNs      []string
+		listNextToken *string
+		describeFn    func(ctx context.Context, params *awsecs.DescribeServicesInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeServicesOutput, error)
+		wantCount     int
+		wantNextToken *string
+	}{
+		{
+			name:          "single page nil token in nil token out",
+			cluster:       "prod",
+			inputToken:    nil,
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:service/prod/web"},
+			listNextToken: nil,
+			describeFn: func(ctx context.Context, params *awsecs.DescribeServicesInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeServicesOutput, error) {
+				return &awsecs.DescribeServicesOutput{
+					Services: []ecstypes.Service{
+						{
+							ServiceName:    awssdk.String("web"),
+							ServiceArn:     awssdk.String("arn:aws:ecs:us-east-1:123456:service/prod/web"),
+							Status:         awssdk.String("ACTIVE"),
+							DesiredCount:   2,
+							RunningCount:   2,
+							PendingCount:   0,
+							TaskDefinition: awssdk.String("arn:aws:ecs:us-east-1:123456:task-definition/web:3"),
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: nil,
+		},
+		{
+			name:          "first page with more pages token returned",
+			cluster:       "prod",
+			inputToken:    nil,
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:service/prod/api"},
+			listNextToken: awssdk.String("svc-page2"),
+			describeFn: func(ctx context.Context, params *awsecs.DescribeServicesInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeServicesOutput, error) {
+				return &awsecs.DescribeServicesOutput{
+					Services: []ecstypes.Service{
+						{
+							ServiceName:    awssdk.String("api"),
+							ServiceArn:     awssdk.String("arn:aws:ecs:us-east-1:123456:service/prod/api"),
+							Status:         awssdk.String("ACTIVE"),
+							DesiredCount:   1,
+							TaskDefinition: awssdk.String("arn:aws:ecs:us-east-1:123456:task-definition/api:1"),
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: awssdk.String("svc-page2"),
+		},
+		{
+			name:          "subsequent page token in nil token out",
+			cluster:       "prod",
+			inputToken:    awssdk.String("svc-page2"),
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:service/prod/worker"},
+			listNextToken: nil,
+			describeFn: func(ctx context.Context, params *awsecs.DescribeServicesInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeServicesOutput, error) {
+				return &awsecs.DescribeServicesOutput{
+					Services: []ecstypes.Service{
+						{
+							ServiceName:    awssdk.String("worker"),
+							ServiceArn:     awssdk.String("arn:aws:ecs:us-east-1:123456:service/prod/worker"),
+							Status:         awssdk.String("ACTIVE"),
+							DesiredCount:   3,
+							TaskDefinition: awssdk.String("arn:aws:ecs:us-east-1:123456:task-definition/worker:7"),
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: nil,
+		},
+		{
+			name:          "empty results",
+			cluster:       "prod",
+			inputToken:    nil,
+			listARNs:      []string{},
+			listNextToken: nil,
+			describeFn:    nil,
+			wantCount:     0,
+			wantNextToken: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockECSAPI{
+				listServicesFunc: func(ctx context.Context, params *awsecs.ListServicesInput, optFns ...func(*awsecs.Options)) (*awsecs.ListServicesOutput, error) {
+					return &awsecs.ListServicesOutput{
+						ServiceArns: tt.listARNs,
+						NextToken:   tt.listNextToken,
+					}, nil
+				},
+				describeServicesFunc: tt.describeFn,
+			}
+
+			client := NewClient(mock)
+			services, nextToken, err := client.ListServicesPage(context.Background(), tt.cluster, tt.inputToken)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(services) != tt.wantCount {
+				t.Errorf("len(services) = %d, want %d", len(services), tt.wantCount)
+			}
+			if tt.wantNextToken == nil && nextToken != nil {
+				t.Errorf("nextToken = %s, want nil", *nextToken)
+			}
+			if tt.wantNextToken != nil {
+				if nextToken == nil {
+					t.Errorf("nextToken = nil, want %s", *tt.wantNextToken)
+				} else if *nextToken != *tt.wantNextToken {
+					t.Errorf("nextToken = %s, want %s", *nextToken, *tt.wantNextToken)
+				}
+			}
+		})
+	}
+}
+
+func TestListTasksPage(t *testing.T) {
+	tests := []struct {
+		name          string
+		cluster       string
+		service       string
+		inputToken    *string
+		listARNs      []string
+		listNextToken *string
+		describeFn    func(ctx context.Context, params *awsecs.DescribeTasksInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeTasksOutput, error)
+		wantCount     int
+		wantNextToken *string
+	}{
+		{
+			name:          "single page nil token in nil token out",
+			cluster:       "prod",
+			service:       "web",
+			inputToken:    nil,
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:task/prod/abc111"},
+			listNextToken: nil,
+			describeFn: func(ctx context.Context, params *awsecs.DescribeTasksInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeTasksOutput, error) {
+				ts := time.Date(2026, 1, 10, 9, 0, 0, 0, time.UTC)
+				return &awsecs.DescribeTasksOutput{
+					Tasks: []ecstypes.Task{
+						{
+							TaskArn:           awssdk.String("arn:aws:ecs:us-east-1:123456:task/prod/abc111"),
+							LastStatus:        awssdk.String("RUNNING"),
+							TaskDefinitionArn: awssdk.String("arn:aws:ecs:us-east-1:123456:task-definition/web:3"),
+							StartedAt:         &ts,
+							HealthStatus:      ecstypes.HealthStatusHealthy,
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: nil,
+		},
+		{
+			name:          "first page with more pages token returned",
+			cluster:       "prod",
+			service:       "web",
+			inputToken:    nil,
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:task/prod/aaa000"},
+			listNextToken: awssdk.String("task-page2"),
+			describeFn: func(ctx context.Context, params *awsecs.DescribeTasksInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeTasksOutput, error) {
+				return &awsecs.DescribeTasksOutput{
+					Tasks: []ecstypes.Task{
+						{
+							TaskArn:           awssdk.String("arn:aws:ecs:us-east-1:123456:task/prod/aaa000"),
+							LastStatus:        awssdk.String("RUNNING"),
+							TaskDefinitionArn: awssdk.String("arn:aws:ecs:us-east-1:123456:task-definition/web:3"),
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: awssdk.String("task-page2"),
+		},
+		{
+			name:          "subsequent page token in nil token out",
+			cluster:       "prod",
+			service:       "web",
+			inputToken:    awssdk.String("task-page2"),
+			listARNs:      []string{"arn:aws:ecs:us-east-1:123456:task/prod/bbb111"},
+			listNextToken: nil,
+			describeFn: func(ctx context.Context, params *awsecs.DescribeTasksInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeTasksOutput, error) {
+				return &awsecs.DescribeTasksOutput{
+					Tasks: []ecstypes.Task{
+						{
+							TaskArn:           awssdk.String("arn:aws:ecs:us-east-1:123456:task/prod/bbb111"),
+							LastStatus:        awssdk.String("STOPPED"),
+							TaskDefinitionArn: awssdk.String("arn:aws:ecs:us-east-1:123456:task-definition/web:2"),
+						},
+					},
+				}, nil
+			},
+			wantCount:     1,
+			wantNextToken: nil,
+		},
+		{
+			name:          "empty results",
+			cluster:       "prod",
+			service:       "web",
+			inputToken:    nil,
+			listARNs:      []string{},
+			listNextToken: nil,
+			describeFn:    nil,
+			wantCount:     0,
+			wantNextToken: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockECSAPI{
+				listTasksFunc: func(ctx context.Context, params *awsecs.ListTasksInput, optFns ...func(*awsecs.Options)) (*awsecs.ListTasksOutput, error) {
+					return &awsecs.ListTasksOutput{
+						TaskArns:  tt.listARNs,
+						NextToken: tt.listNextToken,
+					}, nil
+				},
+				describeTasksFunc: tt.describeFn,
+			}
+
+			client := NewClient(mock)
+			tasks, nextToken, err := client.ListTasksPage(context.Background(), tt.cluster, tt.service, tt.inputToken)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(tasks) != tt.wantCount {
+				t.Errorf("len(tasks) = %d, want %d", len(tasks), tt.wantCount)
+			}
+			if tt.wantNextToken == nil && nextToken != nil {
+				t.Errorf("nextToken = %s, want nil", *nextToken)
+			}
+			if tt.wantNextToken != nil {
+				if nextToken == nil {
+					t.Errorf("nextToken = nil, want %s", *tt.wantNextToken)
+				} else if *nextToken != *tt.wantNextToken {
+					t.Errorf("nextToken = %s, want %s", *nextToken, *tt.wantNextToken)
+				}
+			}
+		})
+	}
+}
+
 func TestDescribeService(t *testing.T) {
 	eventTime := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
 	deployTime := time.Date(2026, 2, 19, 8, 0, 0, 0, time.UTC)

@@ -279,6 +279,137 @@ func TestView_WithAnomalies(t *testing.T) {
 	}
 }
 
+func TestRenderMonthHeader(t *testing.T) {
+	tests := []struct {
+		name          string
+		selectedMonth time.Time
+		wantContains  []string
+	}{
+		{
+			name:          "zero time shows current month with current label",
+			selectedMonth: time.Time{},
+			wantContains:  []string{time.Now().Format("January 2006"), "(current)"},
+		},
+		{
+			name:          "past month shows month name without current label",
+			selectedMonth: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
+			wantContains:  []string{"December 2025"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(nil, "test", "")
+			m.selectedMonth = tt.selectedMonth
+			header := m.renderMonthHeader()
+			for _, want := range tt.wantContains {
+				if !strings.Contains(header, want) {
+					t.Errorf("renderMonthHeader() missing %q", want)
+				}
+			}
+			// Past months should NOT contain "(current)"
+			if !tt.selectedMonth.IsZero() {
+				if strings.Contains(header, "(current)") {
+					t.Error("past month should not have (current) label")
+				}
+			}
+		})
+	}
+}
+
+func TestBuildServiceDrillDown(t *testing.T) {
+	tests := []struct {
+		name         string
+		drillService string
+		data         *awscost.CostData
+		wantContains []string
+		wantEmpty    bool
+	}{
+		{
+			name:         "nil data shows no data message",
+			drillService: "Amazon EC2",
+			data:         nil,
+			wantContains: []string{"No data for Amazon EC2"},
+		},
+		{
+			name:         "missing service shows no daily data message",
+			drillService: "Amazon RDS",
+			data: &awscost.CostData{
+				Currency:        "USD",
+				ServiceDailyMap: map[string]map[string]float64{"Amazon EC2": {"2026-01-01": 10.0}},
+			},
+			wantContains: []string{"No daily data for Amazon RDS"},
+		},
+		{
+			name:         "valid service shows chart and total",
+			drillService: "Amazon EC2",
+			data: &awscost.CostData{
+				Currency: "USD",
+				ServiceDailyMap: map[string]map[string]float64{
+					"Amazon EC2": {
+						"2026-01-01": 10.0,
+						"2026-01-02": 15.0,
+						"2026-01-03": 12.0,
+					},
+				},
+			},
+			wantContains: []string{"Amazon EC2", "$37.00", "Daily Spend"},
+		},
+		{
+			name:         "single day service shows total but no chart",
+			drillService: "Amazon S3",
+			data: &awscost.CostData{
+				Currency: "USD",
+				ServiceDailyMap: map[string]map[string]float64{
+					"Amazon S3": {"2026-01-01": 5.50},
+				},
+			},
+			wantContains: []string{"Amazon S3", "$5.50"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(nil, "test", "")
+			m.width = 100
+			m.data = tt.data
+			m.drillService = tt.drillService
+
+			result := m.buildServiceDrillDown()
+
+			for _, want := range tt.wantContains {
+				if !strings.Contains(result, want) {
+					t.Errorf("buildServiceDrillDown() missing %q", want)
+				}
+			}
+		})
+	}
+}
+
+func TestView_ServiceDrillDown(t *testing.T) {
+	m := NewModel(nil, "test", "")
+	m.loading = false
+	m.drillService = "Amazon EC2"
+	m.data = &awscost.CostData{
+		Currency: "USD",
+		ServiceDailyMap: map[string]map[string]float64{
+			"Amazon EC2": {
+				"2026-01-01": 10.0,
+				"2026-01-02": 15.0,
+			},
+		},
+		LastUpdated: time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC),
+	}
+
+	view := m.View().Content
+	if !strings.Contains(view, "Amazon EC2") {
+		t.Error("drill-down view should show service name")
+	}
+	if !strings.Contains(view, "Esc back") {
+		t.Error("drill-down view should show Esc hint")
+	}
+}
+
 func TestCurrency(t *testing.T) {
 	tests := []struct {
 		amount   float64
@@ -296,5 +427,155 @@ func TestCurrency(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("Currency(%f, %q) = %q, want %q", tt.amount, tt.currency, got, tt.want)
 		}
+	}
+}
+
+func TestUpdate_MonthNavigation(t *testing.T) {
+	now := time.Now()
+	currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	prevMonthStart := currentMonthStart.AddDate(0, -1, 0)
+	minMonth := time.Date(now.Year()-1, now.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name          string
+		selectedMonth time.Time
+		key           tea.KeyPressMsg
+		wantMonth     time.Time
+		wantLoading   bool
+	}{
+		{
+			name:          "previous month from current",
+			selectedMonth: time.Time{},
+			key:           tea.KeyPressMsg{Code: '[', Text: "["},
+			wantMonth:     prevMonthStart,
+			wantLoading:   true,
+		},
+		{
+			name:          "previous month cap at 12 months",
+			selectedMonth: minMonth,
+			key:           tea.KeyPressMsg{Code: '[', Text: "["},
+			wantMonth:     minMonth,
+			wantLoading:   false,
+		},
+		{
+			name:          "next month from past",
+			selectedMonth: currentMonthStart.AddDate(0, -2, 0),
+			key:           tea.KeyPressMsg{Code: ']', Text: "]"},
+			wantMonth:     currentMonthStart.AddDate(0, -1, 0),
+			wantLoading:   true,
+		},
+		{
+			name:          "next month already current",
+			selectedMonth: time.Time{},
+			key:           tea.KeyPressMsg{Code: ']', Text: "]"},
+			wantMonth:     time.Time{},
+			wantLoading:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(nil, "test", "")
+			m.selectedMonth = tt.selectedMonth
+			m.loading = false
+
+			updated, _ := m.Update(tt.key)
+			model := updated.(Model)
+
+			if !model.selectedMonth.Equal(tt.wantMonth) {
+				t.Errorf("selectedMonth = %v, want %v", model.selectedMonth, tt.wantMonth)
+			}
+			if model.loading != tt.wantLoading {
+				t.Errorf("loading = %v, want %v", model.loading, tt.wantLoading)
+			}
+		})
+	}
+}
+
+func TestUpdate_ServiceDrillDown(t *testing.T) {
+	tests := []struct {
+		name             string
+		drillService     string
+		key              tea.KeyPressMsg
+		wantDrillService string
+	}{
+		{
+			name:             "enter drills into selected service",
+			drillService:     "",
+			key:              tea.KeyPressMsg{Code: tea.KeyEnter},
+			wantDrillService: "Amazon EC2",
+		},
+		{
+			name:             "esc exits drill-down",
+			drillService:     "Amazon EC2",
+			key:              tea.KeyPressMsg{Code: tea.KeyEscape},
+			wantDrillService: "",
+		},
+		{
+			name:             "esc with no drill-down does nothing",
+			drillService:     "",
+			key:              tea.KeyPressMsg{Code: tea.KeyEscape},
+			wantDrillService: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(nil, "test", "")
+			m.loading = false
+			m.drillService = tt.drillService
+			m.data = &awscost.CostData{
+				Currency: "USD",
+				TopServices: []awscost.ServiceCost{
+					{Name: "Amazon EC2", Cost: 89.12},
+					{Name: "Amazon S3", Cost: 42.30},
+				},
+			}
+			m.table.SetRows(m.buildRows())
+
+			updated, _ := m.Update(tt.key)
+			model := updated.(Model)
+
+			if model.drillService != tt.wantDrillService {
+				t.Errorf("drillService = %q, want %q", model.drillService, tt.wantDrillService)
+			}
+		})
+	}
+}
+
+func TestUpdate_Refresh(t *testing.T) {
+	tests := []struct {
+		name        string
+		key         tea.KeyPressMsg
+		wantLoading bool
+		wantErr     bool
+	}{
+		{
+			name:        "refresh sets loading",
+			key:         tea.KeyPressMsg{Code: 'r', Text: "r"},
+			wantLoading: true,
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(nil, "test", "")
+			m.loading = false
+			m.err = fmt.Errorf("old error")
+
+			updated, _ := m.Update(tt.key)
+			model := updated.(Model)
+
+			if model.loading != tt.wantLoading {
+				t.Errorf("loading = %v, want %v", model.loading, tt.wantLoading)
+			}
+			if tt.wantErr && model.err == nil {
+				t.Errorf("err = nil, want non-nil")
+			}
+			if !tt.wantErr && model.err != nil {
+				t.Errorf("err = %v, want nil", model.err)
+			}
+		})
 	}
 }

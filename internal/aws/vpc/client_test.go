@@ -870,3 +870,280 @@ func TestGetVPCTags_Empty(t *testing.T) {
 		t.Fatalf("expected 0 tags, got %d", len(tags))
 	}
 }
+
+func TestListVPCsPage(t *testing.T) {
+	tt := []struct {
+		name          string
+		inputToken    *string
+		mockVpcs      []types.Vpc
+		mockNextToken *string
+		wantLen       int
+		wantNextToken *string
+		wantVPCID     string
+	}{
+		{
+			name:       "single page no next token",
+			inputToken: nil,
+			mockVpcs: []types.Vpc{
+				{
+					VpcId:     awssdk.String("vpc-single"),
+					CidrBlock: awssdk.String("10.0.0.0/16"),
+					IsDefault: awssdk.Bool(false),
+					State:     types.VpcStateAvailable,
+					Tags:      []types.Tag{{Key: awssdk.String("Name"), Value: awssdk.String("prod")}},
+				},
+			},
+			mockNextToken: nil,
+			wantLen:       1,
+			wantNextToken: nil,
+			wantVPCID:     "vpc-single",
+		},
+		{
+			name:       "first page with more results",
+			inputToken: nil,
+			mockVpcs: []types.Vpc{
+				{
+					VpcId:     awssdk.String("vpc-first"),
+					CidrBlock: awssdk.String("10.1.0.0/16"),
+					IsDefault: awssdk.Bool(false),
+					State:     types.VpcStateAvailable,
+				},
+			},
+			mockNextToken: awssdk.String("page2-token"),
+			wantLen:       1,
+			wantNextToken: awssdk.String("page2-token"),
+			wantVPCID:     "vpc-first",
+		},
+		{
+			name:          "empty results",
+			inputToken:    nil,
+			mockVpcs:      []types.Vpc{},
+			mockNextToken: nil,
+			wantLen:       0,
+			wantNextToken: nil,
+			wantVPCID:     "",
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockVPCAPI{
+				describeVpcsFunc: func(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error) {
+					return &awsec2.DescribeVpcsOutput{
+						Vpcs:      tc.mockVpcs,
+						NextToken: tc.mockNextToken,
+					}, nil
+				},
+			}
+			client := NewClient(mock)
+			vpcs, nextToken, err := client.ListVPCsPage(context.Background(), tc.inputToken)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(vpcs) != tc.wantLen {
+				t.Errorf("len(vpcs) = %d, want %d", len(vpcs), tc.wantLen)
+			}
+			if tc.wantNextToken == nil && nextToken != nil {
+				t.Errorf("nextToken = %s, want nil", *nextToken)
+			}
+			if tc.wantNextToken != nil {
+				if nextToken == nil {
+					t.Errorf("nextToken = nil, want %s", *tc.wantNextToken)
+				} else if *nextToken != *tc.wantNextToken {
+					t.Errorf("nextToken = %s, want %s", *nextToken, *tc.wantNextToken)
+				}
+			}
+			if tc.wantVPCID != "" && len(vpcs) > 0 && vpcs[0].VPCID != tc.wantVPCID {
+				t.Errorf("vpcs[0].VPCID = %s, want %s", vpcs[0].VPCID, tc.wantVPCID)
+			}
+		})
+	}
+}
+
+func TestListSubnetsPage(t *testing.T) {
+	tt := []struct {
+		name          string
+		vpcID         string
+		inputToken    *string
+		mockSubnets   []types.Subnet
+		mockNextToken *string
+		wantLen       int
+		wantNextToken *string
+		wantSubnetID  string
+	}{
+		{
+			name:       "single page no next token",
+			vpcID:      "vpc-abc",
+			inputToken: nil,
+			mockSubnets: []types.Subnet{
+				{
+					SubnetId:                awssdk.String("subnet-aaa"),
+					CidrBlock:               awssdk.String("10.0.1.0/24"),
+					AvailabilityZone:        awssdk.String("us-east-1a"),
+					AvailableIpAddressCount: awssdk.Int32(251),
+					Tags:                    []types.Tag{{Key: awssdk.String("Name"), Value: awssdk.String("pub-a")}},
+				},
+			},
+			mockNextToken: nil,
+			wantLen:       1,
+			wantNextToken: nil,
+			wantSubnetID:  "subnet-aaa",
+		},
+		{
+			name:       "first page with more results",
+			vpcID:      "vpc-abc",
+			inputToken: nil,
+			mockSubnets: []types.Subnet{
+				{
+					SubnetId:                awssdk.String("subnet-bbb"),
+					CidrBlock:               awssdk.String("10.0.2.0/24"),
+					AvailabilityZone:        awssdk.String("us-east-1b"),
+					AvailableIpAddressCount: awssdk.Int32(100),
+				},
+			},
+			mockNextToken: awssdk.String("subnet-page2"),
+			wantLen:       1,
+			wantNextToken: awssdk.String("subnet-page2"),
+			wantSubnetID:  "subnet-bbb",
+		},
+		{
+			name:          "empty results",
+			vpcID:         "vpc-abc",
+			inputToken:    nil,
+			mockSubnets:   []types.Subnet{},
+			mockNextToken: nil,
+			wantLen:       0,
+			wantNextToken: nil,
+			wantSubnetID:  "",
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockVPCAPI{
+				describeSubnetsFunc: func(ctx context.Context, params *awsec2.DescribeSubnetsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSubnetsOutput, error) {
+					return &awsec2.DescribeSubnetsOutput{
+						Subnets:   tc.mockSubnets,
+						NextToken: tc.mockNextToken,
+					}, nil
+				},
+			}
+			client := NewClient(mock)
+			subnets, nextToken, err := client.ListSubnetsPage(context.Background(), tc.vpcID, tc.inputToken)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(subnets) != tc.wantLen {
+				t.Errorf("len(subnets) = %d, want %d", len(subnets), tc.wantLen)
+			}
+			if tc.wantNextToken == nil && nextToken != nil {
+				t.Errorf("nextToken = %s, want nil", *nextToken)
+			}
+			if tc.wantNextToken != nil {
+				if nextToken == nil {
+					t.Errorf("nextToken = nil, want %s", *tc.wantNextToken)
+				} else if *nextToken != *tc.wantNextToken {
+					t.Errorf("nextToken = %s, want %s", *nextToken, *tc.wantNextToken)
+				}
+			}
+			if tc.wantSubnetID != "" && len(subnets) > 0 && subnets[0].SubnetID != tc.wantSubnetID {
+				t.Errorf("subnets[0].SubnetID = %s, want %s", subnets[0].SubnetID, tc.wantSubnetID)
+			}
+		})
+	}
+}
+
+func TestListSecurityGroupsPage(t *testing.T) {
+	tt := []struct {
+		name          string
+		vpcID         string
+		inputToken    *string
+		mockSGs       []types.SecurityGroup
+		mockNextToken *string
+		wantLen       int
+		wantNextToken *string
+		wantGroupID   string
+	}{
+		{
+			name:       "single page no next token",
+			vpcID:      "vpc-abc",
+			inputToken: nil,
+			mockSGs: []types.SecurityGroup{
+				{
+					GroupId:     awssdk.String("sg-111"),
+					GroupName:   awssdk.String("web-sg"),
+					Description: awssdk.String("Web traffic"),
+					IpPermissions: []types.IpPermission{
+						{IpProtocol: awssdk.String("tcp"), FromPort: awssdk.Int32(80), ToPort: awssdk.Int32(80)},
+					},
+					IpPermissionsEgress: []types.IpPermission{
+						{IpProtocol: awssdk.String("-1")},
+					},
+				},
+			},
+			mockNextToken: nil,
+			wantLen:       1,
+			wantNextToken: nil,
+			wantGroupID:   "sg-111",
+		},
+		{
+			name:       "first page with more results",
+			vpcID:      "vpc-abc",
+			inputToken: nil,
+			mockSGs: []types.SecurityGroup{
+				{
+					GroupId:   awssdk.String("sg-222"),
+					GroupName: awssdk.String("db-sg"),
+				},
+			},
+			mockNextToken: awssdk.String("sg-page2"),
+			wantLen:       1,
+			wantNextToken: awssdk.String("sg-page2"),
+			wantGroupID:   "sg-222",
+		},
+		{
+			name:          "empty results",
+			vpcID:         "vpc-abc",
+			inputToken:    nil,
+			mockSGs:       []types.SecurityGroup{},
+			mockNextToken: nil,
+			wantLen:       0,
+			wantNextToken: nil,
+			wantGroupID:   "",
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockVPCAPI{
+				describeSecurityGroupsFunc: func(ctx context.Context, params *awsec2.DescribeSecurityGroupsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupsOutput, error) {
+					return &awsec2.DescribeSecurityGroupsOutput{
+						SecurityGroups: tc.mockSGs,
+						NextToken:      tc.mockNextToken,
+					}, nil
+				},
+			}
+			client := NewClient(mock)
+			sgs, nextToken, err := client.ListSecurityGroupsPage(context.Background(), tc.vpcID, tc.inputToken)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(sgs) != tc.wantLen {
+				t.Errorf("len(sgs) = %d, want %d", len(sgs), tc.wantLen)
+			}
+			if tc.wantNextToken == nil && nextToken != nil {
+				t.Errorf("nextToken = %s, want nil", *nextToken)
+			}
+			if tc.wantNextToken != nil {
+				if nextToken == nil {
+					t.Errorf("nextToken = nil, want %s", *tc.wantNextToken)
+				} else if *nextToken != *tc.wantNextToken {
+					t.Errorf("nextToken = %s, want %s", *nextToken, *tc.wantNextToken)
+				}
+			}
+			if tc.wantGroupID != "" && len(sgs) > 0 && sgs[0].GroupID != tc.wantGroupID {
+				t.Errorf("sgs[0].GroupID = %s, want %s", sgs[0].GroupID, tc.wantGroupID)
+			}
+		})
+	}
+}

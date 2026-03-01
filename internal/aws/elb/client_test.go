@@ -402,6 +402,103 @@ func TestGetLoadBalancerAttributes(t *testing.T) {
 	assert.Equal(t, "true", attrs[1].Value)
 }
 
+func TestListLoadBalancersPage(t *testing.T) {
+	created := time.Date(2025, 11, 5, 14, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name           string
+		inputMarker    *string
+		lbs            []elbtypes.LoadBalancer
+		nextMarker     *string
+		wantCount      int
+		wantNextMarker *string
+	}{
+		{
+			name:        "single page nil marker in nil marker out",
+			inputMarker: nil,
+			lbs: []elbtypes.LoadBalancer{
+				{
+					LoadBalancerName: awssdk.String("prod-alb"),
+					LoadBalancerArn:  awssdk.String("arn:aws:elasticloadbalancing:us-east-1:123456:loadbalancer/app/prod-alb/abc"),
+					Type:             elbtypes.LoadBalancerTypeEnumApplication,
+					State:            &elbtypes.LoadBalancerState{Code: elbtypes.LoadBalancerStateEnumActive},
+					Scheme:           elbtypes.LoadBalancerSchemeEnumInternetFacing,
+					DNSName:          awssdk.String("prod-alb.us-east-1.elb.amazonaws.com"),
+					VpcId:            awssdk.String("vpc-prod"),
+					CreatedTime:      &created,
+				},
+			},
+			nextMarker:     nil,
+			wantCount:      1,
+			wantNextMarker: nil,
+		},
+		{
+			name:        "first page with more pages marker returned",
+			inputMarker: nil,
+			lbs: []elbtypes.LoadBalancer{
+				{
+					LoadBalancerName: awssdk.String("alb-page1"),
+					LoadBalancerArn:  awssdk.String("arn:aws:elasticloadbalancing:us-east-1:123456:loadbalancer/app/alb-page1/001"),
+					Type:             elbtypes.LoadBalancerTypeEnumApplication,
+					State:            &elbtypes.LoadBalancerState{Code: elbtypes.LoadBalancerStateEnumActive},
+					DNSName:          awssdk.String("alb-page1.us-east-1.elb.amazonaws.com"),
+				},
+			},
+			nextMarker:     awssdk.String("marker-page2"),
+			wantCount:      1,
+			wantNextMarker: awssdk.String("marker-page2"),
+		},
+		{
+			name:        "subsequent page marker in nil marker out",
+			inputMarker: awssdk.String("marker-page2"),
+			lbs: []elbtypes.LoadBalancer{
+				{
+					LoadBalancerName: awssdk.String("alb-page2"),
+					LoadBalancerArn:  awssdk.String("arn:aws:elasticloadbalancing:us-east-1:123456:loadbalancer/app/alb-page2/002"),
+					Type:             elbtypes.LoadBalancerTypeEnumNetwork,
+					State:            &elbtypes.LoadBalancerState{Code: elbtypes.LoadBalancerStateEnumActive},
+					DNSName:          awssdk.String("alb-page2.us-east-1.elb.amazonaws.com"),
+				},
+			},
+			nextMarker:     nil,
+			wantCount:      1,
+			wantNextMarker: nil,
+		},
+		{
+			name:           "empty results",
+			inputMarker:    nil,
+			lbs:            []elbtypes.LoadBalancer{},
+			nextMarker:     nil,
+			wantCount:      0,
+			wantNextMarker: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockELBAPI{
+				describeLoadBalancersFunc: func(ctx context.Context, params *elbv2.DescribeLoadBalancersInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeLoadBalancersOutput, error) {
+					return &elbv2.DescribeLoadBalancersOutput{
+						LoadBalancers: tt.lbs,
+						NextMarker:    tt.nextMarker,
+					}, nil
+				},
+			}
+
+			client := NewClient(mock)
+			lbs, nextMarker, err := client.ListLoadBalancersPage(context.Background(), tt.inputMarker)
+			require.NoError(t, err)
+			assert.Len(t, lbs, tt.wantCount)
+			if tt.wantNextMarker == nil {
+				assert.Nil(t, nextMarker)
+			} else {
+				require.NotNil(t, nextMarker)
+				assert.Equal(t, *tt.wantNextMarker, *nextMarker)
+			}
+		})
+	}
+}
+
 func TestGetResourceTags(t *testing.T) {
 	mock := &mockELBAPI{
 		describeTagsFunc: func(ctx context.Context, params *elbv2.DescribeTagsInput, optFns ...func(*elbv2.Options)) (*elbv2.DescribeTagsOutput, error) {

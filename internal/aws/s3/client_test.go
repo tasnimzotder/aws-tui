@@ -39,88 +39,140 @@ func (m *mockS3API) GetObject(ctx context.Context, params *awss3.GetObjectInput,
 func TestListBuckets(t *testing.T) {
 	created1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
 	created2 := time.Date(2025, 6, 20, 0, 0, 0, 0, time.UTC)
+	created3 := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
 
-	mock := &mockS3API{
-		listBucketsFunc: func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
-			return &awss3.ListBucketsOutput{
-				Buckets: []s3types.Bucket{
-					{Name: awssdk.String("bucket-a"), CreationDate: &created1},
-					{Name: awssdk.String("bucket-b"), CreationDate: &created2},
-				},
-			}, nil
-		},
-		getBucketLocationFunc: func(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error) {
-			switch awssdk.ToString(params.Bucket) {
-			case "bucket-a":
-				return &awss3.GetBucketLocationOutput{
-					LocationConstraint: s3types.BucketLocationConstraintEuWest1,
+	tests := []struct {
+		name              string
+		listBucketsFunc   func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error)
+		getBucketLocFunc  func(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error)
+		wantErr           bool
+		wantErrContains   []string
+		wantBucketCount   int
+		wantFirstName     string
+		wantFirstRegion   string
+		wantFirstCreated  time.Time
+		wantSecondName    string
+		wantSecondRegion  string
+	}{
+		{
+			name: "success with region",
+			listBucketsFunc: func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
+				return &awss3.ListBucketsOutput{
+					Buckets: []s3types.Bucket{
+						{Name: awssdk.String("bucket-a"), CreationDate: &created1},
+						{Name: awssdk.String("bucket-b"), CreationDate: &created2},
+					},
 				}, nil
-			default:
-				// Empty string means us-east-1
+			},
+			getBucketLocFunc: func(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error) {
+				switch awssdk.ToString(params.Bucket) {
+				case "bucket-a":
+					return &awss3.GetBucketLocationOutput{
+						LocationConstraint: s3types.BucketLocationConstraintEuWest1,
+					}, nil
+				default:
+					return &awss3.GetBucketLocationOutput{
+						LocationConstraint: "",
+					}, nil
+				}
+			},
+			wantBucketCount:  2,
+			wantFirstName:    "bucket-a",
+			wantFirstRegion:  "eu-west-1",
+			wantFirstCreated: created1,
+			wantSecondName:   "bucket-b",
+			wantSecondRegion: "us-east-1",
+		},
+		{
+			name: "empty location defaults to us-east-1",
+			listBucketsFunc: func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
+				return &awss3.ListBucketsOutput{
+					Buckets: []s3types.Bucket{
+						{Name: awssdk.String("us-bucket"), CreationDate: &created3},
+					},
+				}, nil
+			},
+			getBucketLocFunc: func(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error) {
 				return &awss3.GetBucketLocationOutput{
 					LocationConstraint: "",
 				}, nil
+			},
+			wantBucketCount: 1,
+			wantFirstName:   "us-bucket",
+			wantFirstRegion: "us-east-1",
+		},
+		{
+			name: "API error",
+			listBucketsFunc: func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
+				return nil, fmt.Errorf("access denied")
+			},
+			wantErr:         true,
+			wantErrContains: []string{"ListBuckets"},
+		},
+		{
+			name: "location error",
+			listBucketsFunc: func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
+				return &awss3.ListBucketsOutput{
+					Buckets: []s3types.Bucket{
+						{Name: awssdk.String("fail-bucket"), CreationDate: &created3},
+					},
+				}, nil
+			},
+			getBucketLocFunc: func(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error) {
+				return nil, fmt.Errorf("forbidden")
+			},
+			wantErr:         true,
+			wantErrContains: []string{"GetBucketLocation", "fail-bucket"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockS3API{
+				listBucketsFunc:       tt.listBucketsFunc,
+				getBucketLocationFunc: tt.getBucketLocFunc,
 			}
-		},
-	}
+			client := NewClient(mock)
+			buckets, err := client.ListBuckets(context.Background())
 
-	client := NewClient(mock)
-	buckets, err := client.ListBuckets(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(buckets) != 2 {
-		t.Fatalf("expected 2 buckets, got %d", len(buckets))
-	}
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				for _, substr := range tt.wantErrContains {
+					if !strings.Contains(err.Error(), substr) {
+						t.Errorf("error should contain %q, got: %v", substr, err)
+					}
+				}
+				return
+			}
 
-	// bucket-a should be eu-west-1
-	if buckets[0].Name != "bucket-a" {
-		t.Errorf("Name = %s, want bucket-a", buckets[0].Name)
-	}
-	if buckets[0].Region != "eu-west-1" {
-		t.Errorf("Region = %s, want eu-west-1", buckets[0].Region)
-	}
-	if !buckets[0].CreatedAt.Equal(created1) {
-		t.Errorf("CreatedAt = %v, want %v", buckets[0].CreatedAt, created1)
-	}
-
-	// bucket-b should be us-east-1 (empty LocationConstraint)
-	if buckets[1].Name != "bucket-b" {
-		t.Errorf("Name = %s, want bucket-b", buckets[1].Name)
-	}
-	if buckets[1].Region != "us-east-1" {
-		t.Errorf("Region = %s, want us-east-1", buckets[1].Region)
-	}
-}
-
-func TestListBuckets_EmptyLocationIsUSEast1(t *testing.T) {
-	created := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
-
-	mock := &mockS3API{
-		listBucketsFunc: func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
-			return &awss3.ListBucketsOutput{
-				Buckets: []s3types.Bucket{
-					{Name: awssdk.String("us-bucket"), CreationDate: &created},
-				},
-			}, nil
-		},
-		getBucketLocationFunc: func(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error) {
-			return &awss3.GetBucketLocationOutput{
-				LocationConstraint: "",
-			}, nil
-		},
-	}
-
-	client := NewClient(mock)
-	buckets, err := client.ListBuckets(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(buckets) != 1 {
-		t.Fatalf("expected 1 bucket, got %d", len(buckets))
-	}
-	if buckets[0].Region != "us-east-1" {
-		t.Errorf("Region = %s, want us-east-1", buckets[0].Region)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(buckets) != tt.wantBucketCount {
+				t.Fatalf("expected %d buckets, got %d", tt.wantBucketCount, len(buckets))
+			}
+			if tt.wantBucketCount > 0 {
+				if buckets[0].Name != tt.wantFirstName {
+					t.Errorf("Name = %s, want %s", buckets[0].Name, tt.wantFirstName)
+				}
+				if buckets[0].Region != tt.wantFirstRegion {
+					t.Errorf("Region = %s, want %s", buckets[0].Region, tt.wantFirstRegion)
+				}
+				if !tt.wantFirstCreated.IsZero() && !buckets[0].CreatedAt.Equal(tt.wantFirstCreated) {
+					t.Errorf("CreatedAt = %v, want %v", buckets[0].CreatedAt, tt.wantFirstCreated)
+				}
+			}
+			if tt.wantBucketCount > 1 {
+				if buckets[1].Name != tt.wantSecondName {
+					t.Errorf("Name = %s, want %s", buckets[1].Name, tt.wantSecondName)
+				}
+				if buckets[1].Region != tt.wantSecondRegion {
+					t.Errorf("Region = %s, want %s", buckets[1].Region, tt.wantSecondRegion)
+				}
+			}
+		})
 	}
 }
 
@@ -178,52 +230,6 @@ func TestListObjects_BasicListing(t *testing.T) {
 	}
 	if result.NextToken != "" {
 		t.Errorf("NextToken = %s, want empty", result.NextToken)
-	}
-}
-
-func TestListBuckets_APIError(t *testing.T) {
-	mock := &mockS3API{
-		listBucketsFunc: func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
-			return nil, fmt.Errorf("access denied")
-		},
-	}
-
-	client := NewClient(mock)
-	_, err := client.ListBuckets(context.Background())
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "ListBuckets") {
-		t.Errorf("error should wrap with ListBuckets context, got: %v", err)
-	}
-}
-
-func TestListBuckets_LocationError(t *testing.T) {
-	created := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
-
-	mock := &mockS3API{
-		listBucketsFunc: func(ctx context.Context, params *awss3.ListBucketsInput, optFns ...func(*awss3.Options)) (*awss3.ListBucketsOutput, error) {
-			return &awss3.ListBucketsOutput{
-				Buckets: []s3types.Bucket{
-					{Name: awssdk.String("fail-bucket"), CreationDate: &created},
-				},
-			}, nil
-		},
-		getBucketLocationFunc: func(ctx context.Context, params *awss3.GetBucketLocationInput, optFns ...func(*awss3.Options)) (*awss3.GetBucketLocationOutput, error) {
-			return nil, fmt.Errorf("forbidden")
-		},
-	}
-
-	client := NewClient(mock)
-	_, err := client.ListBuckets(context.Background())
-	if err == nil {
-		t.Fatal("expected error from GetBucketLocation failure")
-	}
-	if !strings.Contains(err.Error(), "GetBucketLocation") {
-		t.Errorf("error should contain GetBucketLocation context, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "fail-bucket") {
-		t.Errorf("error should contain bucket name, got: %v", err)
 	}
 }
 
