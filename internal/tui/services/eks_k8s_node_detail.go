@@ -19,6 +19,7 @@ type k8sNodeDetailMsg struct {
 	conditions  []NodeCondition
 	capacity    map[string]string
 	allocatable map[string]string
+	podCount    int
 	labels      map[string]string
 	taints      []string
 	addresses   []string
@@ -39,6 +40,7 @@ type K8sNodeDetailView struct {
 	conditions  []NodeCondition
 	capacity    map[string]string
 	allocatable map[string]string
+	podCount    int
 	labels      map[string]string
 	taints      []string
 	addresses   []string
@@ -108,6 +110,15 @@ func (v *K8sNodeDetailView) fetchNodeDetail() tea.Cmd {
 			taints = append(taints, fmt.Sprintf("%s=%s:%s", t.Key, t.Value, t.Effect))
 		}
 
+		// Pod count on this node
+		podList, err := k8s.Clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+			FieldSelector: "spec.nodeName=" + nodeName,
+		})
+		podCount := 0
+		if err == nil {
+			podCount = len(podList.Items)
+		}
+
 		// Addresses
 		addresses := make([]string, 0, len(n.Status.Addresses))
 		for _, a := range n.Status.Addresses {
@@ -129,6 +140,7 @@ func (v *K8sNodeDetailView) fetchNodeDetail() tea.Cmd {
 			conditions:  conditions,
 			capacity:    capacity,
 			allocatable: allocatable,
+			podCount:    podCount,
 			labels:      labels,
 			taints:      taints,
 			addresses:   addresses,
@@ -143,6 +155,7 @@ func (v *K8sNodeDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.conditions = msg.conditions
 		v.capacity = msg.capacity
 		v.allocatable = msg.allocatable
+		v.podCount = msg.podCount
 		v.labels = msg.labels
 		v.taints = msg.taints
 		v.addresses = msg.addresses
@@ -237,7 +250,11 @@ func (v *K8sNodeDetailView) renderContent() string {
 			if alloc == "" {
 				alloc = "-"
 			}
-			b.WriteString(fmt.Sprintf(" %-28s %s / %s\n", k, v.capacity[k], alloc))
+			if k == "pods" {
+				b.WriteString(fmt.Sprintf(" %-28s %s / %s  (using %d)\n", k, v.capacity[k], alloc, v.podCount))
+			} else {
+				b.WriteString(fmt.Sprintf(" %-28s %s / %s\n", k, v.capacity[k], alloc))
+			}
 		}
 	}
 
