@@ -89,7 +89,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.autoRefresh || msg.gen != m.autoRefreshGen {
 			return m, nil
 		}
-		if time.Now().After(m.nextRefreshAt) {
+		if !time.Now().Before(m.nextRefreshAt) {
 			m.nextRefreshAt = time.Now().Add(m.refreshInterval)
 			return m, tea.Batch(
 				m.scheduleRefreshTick(),
