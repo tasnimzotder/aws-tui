@@ -35,12 +35,12 @@ func TestEKSClusterDetailView_TabNames(t *testing.T) {
 	v := NewEKSClusterDetailView(nil, cluster, "us-east-1")
 
 	expectedTabs := []string{
-		"Node Groups", "Add-ons", "Fargate", "Access",
+		"Scheduling", "Node Groups", "Add-ons", "Fargate", "Access",
 		"Pods", "Services", "Deployments", "Svc Accounts", "Ingresses",
 	}
 
-	if len(v.tabs.TabNames) != 9 {
-		t.Fatalf("expected 9 tabs, got %d", len(v.tabs.TabNames))
+	if len(v.tabs.TabNames) != 10 {
+		t.Fatalf("expected 10 tabs, got %d", len(v.tabs.TabNames))
 	}
 
 	for i, name := range expectedTabs {
@@ -74,7 +74,7 @@ func TestEKSClusterDetailView_TabSwitch(t *testing.T) {
 		t.Errorf("after 2nd Tab: activeTab = %d, want 2", v.tabs.ActiveTab)
 	}
 
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 8; i++ {
 		v.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	}
 	if v.tabs.ActiveTab != 0 {
@@ -453,7 +453,7 @@ func TestEKSClusterDetailView_NamespaceChange_ClearsK8sTabs(t *testing.T) {
 	v.namespace = "default"
 	v.lastNamespace = "default"
 	// Place dummy views in K8s tab slots
-	for i := 4; i < 9; i++ {
+	for i := 5; i < 10; i++ {
 		v.tabs.TabViews[i] = &eksK8sPlaceholderView{name: "dummy", k8sOK: true}
 	}
 	// Override InitTab to return nil (no real K8s client)
@@ -463,8 +463,8 @@ func TestEKSClusterDetailView_NamespaceChange_ClearsK8sTabs(t *testing.T) {
 	v.namespace = "kube-system"
 
 	// Switch to a K8s tab — should clear all K8s tabs because namespace differs
-	v.tabs.SwitchTab(5)
-	for i := 4; i < 9; i++ {
+	v.tabs.SwitchTab(6)
+	for i := 5; i < 10; i++ {
 		if v.tabs.TabViews[i] != nil {
 			t.Errorf("K8s tab %d should be nil after namespace change, got %v", i, v.tabs.TabViews[i])
 		}
@@ -480,13 +480,13 @@ func TestEKSClusterDetailView_SameNamespace_KeepsTabs(t *testing.T) {
 	v.namespace = "default"
 	v.lastNamespace = "default"
 	dummy := &eksK8sPlaceholderView{name: "dummy", k8sOK: true}
-	v.tabs.TabViews[5] = dummy
+	v.tabs.TabViews[6] = dummy
 	v.tabs.InitTab = func(idx int) View { return nil }
 
-	// Switch to tab 5 — same namespace, should keep existing view
-	v.tabs.SwitchTab(5)
-	if v.tabs.TabViews[5] != dummy {
-		t.Error("K8s tab 5 should be preserved when namespace hasn't changed")
+	// Switch to tab 6 — same namespace, should keep existing view
+	v.tabs.SwitchTab(6)
+	if v.tabs.TabViews[6] != dummy {
+		t.Error("K8s tab 6 should be preserved when namespace hasn't changed")
 	}
 }
 

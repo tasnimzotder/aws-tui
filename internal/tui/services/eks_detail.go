@@ -57,7 +57,7 @@ type EKSClusterDetailView struct {
 	// Tabs
 	tabs *TabController
 
-	// Namespace filtering (for K8s tabs 4-8)
+	// Namespace filtering (for K8s tabs 5-9)
 	namespace          string
 	lastNamespace      string
 	showNamespacePicker bool
@@ -88,14 +88,14 @@ func NewEKSClusterDetailView(client *awsclient.ServiceClient, cluster awseks.EKS
 	}
 	v.tabs = NewTabController(
 		[]string{
-			"Node Groups", "Add-ons", "Fargate", "Access",
+			"Scheduling", "Node Groups", "Add-ons", "Fargate", "Access",
 			"Pods", "Services", "Deployments", "Svc Accounts", "Ingresses",
 		},
 		v.createTab,
 	)
 	v.tabs.BeforeSwitch = func(idx int) {
-		if idx >= 4 && v.lastNamespace != v.namespace {
-			for i := 4; i < len(v.tabs.TabViews); i++ {
+		if idx >= 5 && v.lastNamespace != v.namespace {
+			for i := 5; i < len(v.tabs.TabViews); i++ {
 				v.tabs.TabViews[i] = nil
 			}
 			v.lastNamespace = v.namespace
@@ -192,34 +192,39 @@ func (v *EKSClusterDetailView) fetchNamespaces() tea.Cmd {
 func (v *EKSClusterDetailView) createTab(idx int) View {
 	switch idx {
 	case 0:
-		return NewEKSNodeGroupsTableView(v.client, v.cluster.Name, v.k8sClient)
+		if v.k8sClient != nil {
+			return NewEKSSchedulingView(v.k8sClient)
+		}
+		return newEKSK8sPlaceholderView("Scheduling", v.k8sReady)
 	case 1:
-		return NewEKSAddonsTableView(v.client, v.cluster.Name)
+		return NewEKSNodeGroupsTableView(v.client, v.cluster.Name, v.k8sClient)
 	case 2:
-		return NewEKSFargateTableView(v.client, v.cluster.Name)
+		return NewEKSAddonsTableView(v.client, v.cluster.Name)
 	case 3:
-		return NewEKSAccessEntriesTableView(v.client, v.cluster.Name)
+		return NewEKSFargateTableView(v.client, v.cluster.Name)
 	case 4:
+		return NewEKSAccessEntriesTableView(v.client, v.cluster.Name)
+	case 5:
 		if v.k8sClient != nil {
 			return NewK8sPodsTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
 		}
 		return newEKSK8sPlaceholderView("Pods", v.k8sReady)
-	case 5:
+	case 6:
 		if v.k8sClient != nil {
 			return NewK8sServicesTableViewWithPF(v.k8sClient, v.namespace, v.pfManager)
 		}
 		return newEKSK8sPlaceholderView("Services", v.k8sReady)
-	case 6:
+	case 7:
 		if v.k8sClient != nil {
 			return NewK8sDeploymentsTableView(v.k8sClient, v.namespace)
 		}
 		return newEKSK8sPlaceholderView("Deployments", v.k8sReady)
-	case 7:
+	case 8:
 		if v.k8sClient != nil {
 			return NewK8sServiceAccountsTableView(v.k8sClient, v.namespace)
 		}
 		return newEKSK8sPlaceholderView("Svc Accounts", v.k8sReady)
-	case 8:
+	case 9:
 		if v.k8sClient != nil {
 			return NewK8sIngressesTableView(v.k8sClient, v.namespace, v.pfManager)
 		}
@@ -231,7 +236,7 @@ func (v *EKSClusterDetailView) createTab(idx int) View {
 // reinitK8sTab forces re-creation of the current K8s tab with the current namespace.
 func (v *EKSClusterDetailView) reinitK8sTab() tea.Cmd {
 	idx := v.tabs.ActiveTab
-	if idx < 4 || v.k8sClient == nil {
+	if idx < 5 || v.k8sClient == nil {
 		return nil
 	}
 	v.tabs.TabViews[idx] = nil
@@ -293,8 +298,9 @@ func (v *EKSClusterDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.nodeConditions = msg.nodeConditions
 		v.k8sReady = true
 		v.loading = false
-		// Reinit tab 0 (node groups) now that k8sClient is available
+		// Reinit tab 0 (scheduling) and tab 1 (node groups) now that k8sClient is available
 		v.tabs.TabViews[0] = nil
+		v.tabs.TabViews[1] = nil
 		cmd := v.tabs.SwitchTab(0)
 		v.tabs.ResizeActive(v.width, v.contentHeight())
 		return v, cmd
@@ -315,11 +321,11 @@ func (v *EKSClusterDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 		}
 		switch key {
 		case "N":
-			if v.tabs.ActiveTab >= 4 && v.k8sClient != nil {
+			if v.tabs.ActiveTab >= 5 && v.k8sClient != nil {
 				if v.namespace != "" {
 					v.namespace = ""
 					v.lastNamespace = ""
-					for i := 4; i < len(v.tabs.TabViews); i++ {
+					for i := 5; i < len(v.tabs.TabViews); i++ {
 						if i != v.tabs.ActiveTab {
 							v.tabs.TabViews[i] = nil
 						}
@@ -355,7 +361,7 @@ func (v *EKSClusterDetailView) Update(msg tea.Msg) (View, tea.Cmd) {
 // Dashboard box takes ~6 lines, tab bar takes ~2 lines, namespace line ~1 line on K8s tabs.
 func (v *EKSClusterDetailView) contentHeight() int {
 	h := v.height - 8 // dashboard (6) + tab bar (2)
-	if v.tabs.ActiveTab >= 4 {
+	if v.tabs.ActiveTab >= 5 {
 		h-- // namespace indicator line
 	}
 	if h < 3 {
@@ -370,7 +376,7 @@ func (v *EKSClusterDetailView) View() string {
 	sections = append(sections, v.renderDashboard())
 	sections = append(sections, v.tabs.RenderTabBar())
 
-	if v.tabs.ActiveTab >= 4 {
+	if v.tabs.ActiveTab >= 5 {
 		nsText := "All"
 		nsStyle := theme.MutedStyle
 		if v.namespace != "" {
