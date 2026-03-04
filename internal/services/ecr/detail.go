@@ -151,9 +151,9 @@ func (dv *DetailView) renderOverview() string {
 	}
 
 	rows := []ui.KV{
-		{"Repository", dv.repoName},
-		{"Total Images", fmt.Sprintf("%d", totalImages)},
-		{"Total Size", fmt.Sprintf("%.1f MB", totalSize)},
+		{K: "Repository", V: dv.repoName},
+		{K: "Total Images", V: fmt.Sprintf("%d", totalImages)},
+		{K: "Total Size", V: fmt.Sprintf("%.1f MB", totalSize)},
 	}
 	return ui.RenderKV(rows, 20, 0)
 }

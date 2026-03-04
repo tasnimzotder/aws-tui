@@ -306,19 +306,19 @@ func (dv *DetailView) renderOverview() string {
 
 	// Summary KV
 	rows := []ui.KV{
-		{"Month-to-Date", fmt.Sprintf("$%.2f", mtd)},
+		{K: "Month-to-Date", V: fmt.Sprintf("$%.2f", mtd)},
 	}
 	if data.TodaySpend > 0 {
-		rows = append(rows, ui.KV{"Today", fmt.Sprintf("$%.2f", data.TodaySpend)})
+		rows = append(rows, ui.KV{K: "Today", V: fmt.Sprintf("$%.2f", data.TodaySpend)})
 	}
 	if data.YesterdaySpend > 0 {
-		rows = append(rows, ui.KV{"Yesterday", fmt.Sprintf("$%.2f", data.YesterdaySpend)})
+		rows = append(rows, ui.KV{K: "Yesterday", V: fmt.Sprintf("$%.2f", data.YesterdaySpend)})
 	}
 	if forecast > 0 {
-		rows = append(rows, ui.KV{"Forecasted Total", fmt.Sprintf("$%.2f", forecast)})
+		rows = append(rows, ui.KV{K: "Forecasted Total", V: fmt.Sprintf("$%.2f", forecast)})
 	}
 	if data.LastMonthMTDSpend > 0 {
-		rows = append(rows, ui.KV{"Last Month (same period)", fmt.Sprintf("$%.2f", data.LastMonthMTDSpend)})
+		rows = append(rows, ui.KV{K: "Last Month (same period)", V: fmt.Sprintf("$%.2f", data.LastMonthMTDSpend)})
 	}
 	if data.MoMChangePercent != 0 {
 		momStr := fmt.Sprintf("%.1f%%", data.MoMChangePercent)
@@ -327,14 +327,14 @@ func (dv *DetailView) renderOverview() string {
 		} else {
 			momStr = "▼ " + momStr
 		}
-		rows = append(rows, ui.KV{"MoM Change", momStr})
+		rows = append(rows, ui.KV{K: "MoM Change", V: momStr})
 	}
 
 	currency := data.Currency
 	if currency == "" {
 		currency = "USD"
 	}
-	rows = append(rows, ui.KV{"Currency", currency})
+	rows = append(rows, ui.KV{K: "Currency", V: currency})
 	b.WriteString(ui.RenderKV(rows, 26, 0))
 
 	// Budget/Forecast progress bar

@@ -63,11 +63,11 @@ func NewSubnetDetailView(client VPCClient, router plugin.Router, s awsvpc.Subnet
 		kind:   "subnet",
 		title:  fmt.Sprintf("Subnet: %s", nameOrID(s.Name, s.SubnetID)),
 		kvRows: []ui.KV{
-			{"Subnet ID", s.SubnetID},
-			{"Name", s.Name},
-			{"CIDR", s.CIDR},
-			{"Availability Zone", s.AZ},
-			{"Available IPs", strconv.Itoa(s.AvailableIPs)},
+			{K: "Subnet ID", V: s.SubnetID},
+			{K: "Name", V: s.Name},
+			{K: "CIDR", V: s.CIDR},
+			{K: "Availability Zone", V: s.AZ},
+			{K: "Available IPs", V: strconv.Itoa(s.AvailableIPs)},
 		},
 	}
 }
@@ -82,11 +82,11 @@ func NewSGDetailView(client VPCClient, router plugin.Router, sg awsvpc.SecurityG
 		tabs:      ui.NewTabController([]string{"Overview", "Inbound Rules", "Outbound Rules"}),
 		loading:   true,
 		kvRows: []ui.KV{
-			{"Group ID", sg.GroupID},
-			{"Name", sg.Name},
-			{"Description", sg.Description},
-			{"Inbound Rules", strconv.Itoa(sg.InboundRules)},
-			{"Outbound Rules", strconv.Itoa(sg.OutboundRules)},
+			{K: "Group ID", V: sg.GroupID},
+			{K: "Name", V: sg.Name},
+			{K: "Description", V: sg.Description},
+			{K: "Inbound Rules", V: strconv.Itoa(sg.InboundRules)},
+			{K: "Outbound Rules", V: strconv.Itoa(sg.OutboundRules)},
 		},
 	}
 }
@@ -105,11 +105,11 @@ func NewRouteTableDetailView(client VPCClient, router plugin.Router, rt awsvpc.R
 		routes:       rt.Routes,
 		associations: rt.Associations,
 		kvRows: []ui.KV{
-			{"Route Table ID", rt.RouteTableID},
-			{"Name", rt.Name},
-			{"Main", isMain},
-			{"Routes", strconv.Itoa(len(rt.Routes))},
-			{"Associations", strconv.Itoa(len(rt.Associations))},
+			{K: "Route Table ID", V: rt.RouteTableID},
+			{K: "Name", V: rt.Name},
+			{K: "Main", V: isMain},
+			{K: "Routes", V: strconv.Itoa(len(rt.Routes))},
+			{K: "Associations", V: strconv.Itoa(len(rt.Associations))},
 		},
 	}
 }
@@ -121,13 +121,13 @@ func NewNATGatewayDetailView(client VPCClient, router plugin.Router, ng awsvpc.N
 		kind:   "nat",
 		title:  fmt.Sprintf("NAT GW: %s", nameOrID(ng.Name, ng.GatewayID)),
 		kvRows: []ui.KV{
-			{"Gateway ID", ng.GatewayID},
-			{"Name", ng.Name},
-			{"State", ng.State},
-			{"Type", ng.Type},
-			{"Subnet", ng.SubnetID},
-			{"Elastic IP", ng.ElasticIP},
-			{"Private IP", ng.PrivateIP},
+			{K: "Gateway ID", V: ng.GatewayID},
+			{K: "Name", V: ng.Name},
+			{K: "State", V: ng.State},
+			{K: "Type", V: ng.Type},
+			{K: "Subnet", V: ng.SubnetID},
+			{K: "Elastic IP", V: ng.ElasticIP},
+			{K: "Private IP", V: ng.PrivateIP},
 		},
 	}
 }
@@ -142,12 +142,12 @@ func NewEndpointDetailView(client VPCClient, router plugin.Router, ep awsvpc.VPC
 		endpointSubnets:     ep.SubnetIDs,
 		endpointRouteTables: ep.RouteTableIDs,
 		kvRows: []ui.KV{
-			{"Endpoint ID", ep.EndpointID},
-			{"Service", ep.ServiceName},
-			{"Type", ep.Type},
-			{"State", ep.State},
-			{"Subnets", strconv.Itoa(len(ep.SubnetIDs))},
-			{"Route Tables", strconv.Itoa(len(ep.RouteTableIDs))},
+			{K: "Endpoint ID", V: ep.EndpointID},
+			{K: "Service", V: ep.ServiceName},
+			{K: "Type", V: ep.Type},
+			{K: "State", V: ep.State},
+			{K: "Subnets", V: strconv.Itoa(len(ep.SubnetIDs))},
+			{K: "Route Tables", V: strconv.Itoa(len(ep.RouteTableIDs))},
 		},
 	}
 }
@@ -159,13 +159,13 @@ func NewPeeringDetailView(client VPCClient, router plugin.Router, p awsvpc.VPCPe
 		kind:   "peering",
 		title:  fmt.Sprintf("Peering: %s", nameOrID(p.Name, p.PeeringID)),
 		kvRows: []ui.KV{
-			{"Peering ID", p.PeeringID},
-			{"Name", p.Name},
-			{"Status", p.Status},
-			{"Requester VPC", p.RequesterVPC},
-			{"Requester CIDR", p.RequesterCIDR},
-			{"Accepter VPC", p.AccepterVPC},
-			{"Accepter CIDR", p.AccepterCIDR},
+			{K: "Peering ID", V: p.PeeringID},
+			{K: "Name", V: p.Name},
+			{K: "Status", V: p.Status},
+			{K: "Requester VPC", V: p.RequesterVPC},
+			{K: "Requester CIDR", V: p.RequesterCIDR},
+			{K: "Accepter VPC", V: p.AccepterVPC},
+			{K: "Accepter CIDR", V: p.AccepterCIDR},
 		},
 	}
 }
@@ -184,11 +184,11 @@ func NewNACLDetailView(client VPCClient, router plugin.Router, n awsvpc.NetworkA
 		tabs:    ui.NewTabController([]string{"Overview", "Inbound", "Outbound"}),
 		loading: true,
 		kvRows: []ui.KV{
-			{"NACL ID", n.NACLID},
-			{"Name", n.Name},
-			{"Default", isDefault},
-			{"Inbound Rules", strconv.Itoa(n.Inbound)},
-			{"Outbound Rules", strconv.Itoa(n.Outbound)},
+			{K: "NACL ID", V: n.NACLID},
+			{K: "Name", V: n.Name},
+			{K: "Default", V: isDefault},
+			{K: "Inbound Rules", V: strconv.Itoa(n.Inbound)},
+			{K: "Outbound Rules", V: strconv.Itoa(n.Outbound)},
 		},
 	}
 }
@@ -200,11 +200,11 @@ func NewFlowLogDetailView(client VPCClient, router plugin.Router, fl awsvpc.Flow
 		kind:   "flowlog",
 		title:  fmt.Sprintf("Flow Log: %s", fl.FlowLogID),
 		kvRows: []ui.KV{
-			{"Flow Log ID", fl.FlowLogID},
-			{"Status", fl.Status},
-			{"Traffic Type", fl.TrafficType},
-			{"Destination", fl.LogDestination},
-			{"Log Format", fl.LogFormat},
+			{K: "Flow Log ID", V: fl.FlowLogID},
+			{K: "Status", V: fl.Status},
+			{K: "Traffic Type", V: fl.TrafficType},
+			{K: "Destination", V: fl.LogDestination},
+			{K: "Log Format", V: fl.LogFormat},
 		},
 	}
 }

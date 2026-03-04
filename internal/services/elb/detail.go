@@ -145,16 +145,16 @@ func (dv *DetailView) View() tea.View {
 func (dv *DetailView) renderOverview() string {
 	lb := dv.lb
 	rows := []ui.KV{
-		{"Name", lb.Name},
-		{"ARN", lb.ARN},
-		{"Type", lb.Type},
-		{"State", lb.State},
-		{"Scheme", lb.Scheme},
-		{"DNS Name", lb.DNSName},
-		{"VPC", lb.VPCID},
-		{"Listeners", fmt.Sprintf("%d", len(dv.listeners))},
-		{"Target Groups", fmt.Sprintf("%d", len(dv.tgs))},
-		{"Created", lb.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
+		{K: "Name", V: lb.Name},
+		{K: "ARN", V: lb.ARN},
+		{K: "Type", V: lb.Type},
+		{K: "State", V: lb.State},
+		{K: "Scheme", V: lb.Scheme},
+		{K: "DNS Name", V: lb.DNSName},
+		{K: "VPC", V: lb.VPCID},
+		{K: "Listeners", V: fmt.Sprintf("%d", len(dv.listeners))},
+		{K: "Target Groups", V: fmt.Sprintf("%d", len(dv.tgs))},
+		{K: "Created", V: lb.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
 	}
 	return ui.RenderKV(rows, 20, 0)
 }

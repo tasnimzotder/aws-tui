@@ -101,13 +101,13 @@ func (v *TGDetailView) View() tea.View {
 
 		// TG overview.
 		rows := []ui.KV{
-			{"Name", tg.Name},
-			{"ARN", tg.ARN},
-			{"Protocol", tg.Protocol},
-			{"Port", fmt.Sprintf("%d", tg.Port)},
-			{"Target Type", tg.TargetType},
-			{"Healthy", fmt.Sprintf("%d", tg.HealthyCount)},
-			{"Unhealthy", fmt.Sprintf("%d", tg.UnhealthyCount)},
+			{K: "Name", V: tg.Name},
+			{K: "ARN", V: tg.ARN},
+			{K: "Protocol", V: tg.Protocol},
+			{K: "Port", V: fmt.Sprintf("%d", tg.Port)},
+			{K: "Target Type", V: tg.TargetType},
+			{K: "Healthy", V: fmt.Sprintf("%d", tg.HealthyCount)},
+			{K: "Unhealthy", V: fmt.Sprintf("%d", tg.UnhealthyCount)},
 		}
 		b.WriteString(ui.RenderKV(rows, 16, 0))
 		b.WriteString("\n")

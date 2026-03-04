@@ -288,11 +288,11 @@ func (dv *DetailView) renderPolicy() string {
 func (dv *DetailView) renderUserOverview() string {
 	u := dv.user
 	rows := []ui.KV{
-		{"Name", u.Name},
-		{"User ID", u.UserID},
-		{"ARN", u.ARN},
-		{"Path", u.Path},
-		{"Created", u.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
+		{K: "Name", V: u.Name},
+		{K: "User ID", V: u.UserID},
+		{K: "ARN", V: u.ARN},
+		{K: "Path", V: u.Path},
+		{K: "Created", V: u.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
 	}
 	return ui.RenderKV(rows, 20, 0)
 }
@@ -300,12 +300,12 @@ func (dv *DetailView) renderUserOverview() string {
 func (dv *DetailView) renderRoleOverview() string {
 	r := dv.role
 	rows := []ui.KV{
-		{"Name", r.Name},
-		{"Role ID", r.RoleID},
-		{"ARN", r.ARN},
-		{"Path", r.Path},
-		{"Description", r.Description},
-		{"Created", r.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
+		{K: "Name", V: r.Name},
+		{K: "Role ID", V: r.RoleID},
+		{K: "ARN", V: r.ARN},
+		{K: "Path", V: r.Path},
+		{K: "Description", V: r.Description},
+		{K: "Created", V: r.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
 	}
 	return ui.RenderKV(rows, 20, 0)
 }
@@ -313,14 +313,14 @@ func (dv *DetailView) renderRoleOverview() string {
 func (dv *DetailView) renderPolicyOverview() string {
 	p := dv.policy
 	rows := []ui.KV{
-		{"Name", p.Name},
-		{"Policy ID", p.PolicyID},
-		{"ARN", p.ARN},
-		{"Path", p.Path},
-		{"Attachment Count", fmt.Sprintf("%d", p.AttachmentCount)},
-		{"Default Version", p.DefaultVersionID},
-		{"Created", p.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
-		{"Updated", p.UpdatedAt.Format("2006-01-02 15:04:05 UTC")},
+		{K: "Name", V: p.Name},
+		{K: "Policy ID", V: p.PolicyID},
+		{K: "ARN", V: p.ARN},
+		{K: "Path", V: p.Path},
+		{K: "Attachment Count", V: fmt.Sprintf("%d", p.AttachmentCount)},
+		{K: "Default Version", V: p.DefaultVersionID},
+		{K: "Created", V: p.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
+		{K: "Updated", V: p.UpdatedAt.Format("2006-01-02 15:04:05 UTC")},
 	}
 	return ui.RenderKV(rows, 20, 0)
 }

@@ -288,16 +288,16 @@ func (dv *DetailView) renderOverview() string {
 	}
 
 	rows := []ui.KV{
-		{"Name", c.Name},
-		{"ARN", c.ARN},
-		{"Status", c.Status},
-		{"Version", c.Version},
-		{"Platform Version", c.PlatformVersion},
-		{"Endpoint", c.Endpoint},
-		{"Endpoint Access", endpointAccess},
-		{"VPC ID", c.VPCID},
-		{"Role ARN", c.RoleARN},
-		{"Created At", c.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
+		{K: "Name", V: c.Name},
+		{K: "ARN", V: c.ARN},
+		{K: "Status", V: c.Status},
+		{K: "Version", V: c.Version},
+		{K: "Platform Version", V: c.PlatformVersion},
+		{K: "Endpoint", V: c.Endpoint},
+		{K: "Endpoint Access", V: endpointAccess},
+		{K: "VPC ID", V: c.VPCID},
+		{K: "Role ARN", V: c.RoleARN},
+		{K: "Created At", V: c.CreatedAt.Format("2006-01-02 15:04:05 UTC")},
 	}
 	return ui.RenderKV(rows, 22, 0)
 }

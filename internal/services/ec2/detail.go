@@ -184,21 +184,21 @@ func (dv *DetailView) View() tea.View {
 func (dv *DetailView) renderOverview() string {
 	inst := dv.instance
 	rows := []ui.KV{
-		{"Instance ID", inst.InstanceID},
-		{"Name", inst.Name},
-		{"State", inst.State},
-		{"Type", inst.Type},
-		{"AZ", inst.AZ},
-		{"Platform", inst.Platform},
-		{"Architecture", inst.Architecture},
-		{"AMI", inst.ImageID},
-		{"Key Name", inst.KeyName},
-		{"IAM Profile", inst.IAMProfile},
-		{"VPC", inst.VpcID},
-		{"Subnet", inst.SubnetID},
-		{"Private IP", inst.PrivateIP},
-		{"Public IP", inst.PublicIP},
-		{"Launch Time", inst.LaunchTime.Format("2006-01-02 15:04:05 UTC")},
+		{K: "Instance ID", V: inst.InstanceID},
+		{K: "Name", V: inst.Name},
+		{K: "State", V: inst.State},
+		{K: "Type", V: inst.Type},
+		{K: "AZ", V: inst.AZ},
+		{K: "Platform", V: inst.Platform},
+		{K: "Architecture", V: inst.Architecture},
+		{K: "AMI", V: inst.ImageID},
+		{K: "Key Name", V: inst.KeyName},
+		{K: "IAM Profile", V: inst.IAMProfile},
+		{K: "VPC", V: inst.VpcID},
+		{K: "Subnet", V: inst.SubnetID},
+		{K: "Private IP", V: inst.PrivateIP},
+		{K: "Public IP", V: inst.PublicIP},
+		{K: "Launch Time", V: inst.LaunchTime.Format("2006-01-02 15:04:05 UTC")},
 	}
 	valWidth := dv.width - 22
 	if valWidth < 40 {
@@ -267,7 +267,7 @@ func (dv *DetailView) renderTags() string {
 	}
 	var rows []ui.KV
 	for _, k := range keys {
-		rows = append(rows, ui.KV{k, inst.Tags[k]})
+		rows = append(rows, ui.KV{K: k, V: inst.Tags[k]})
 	}
 	return ui.RenderKV(rows, 20, valWidth)
 }
