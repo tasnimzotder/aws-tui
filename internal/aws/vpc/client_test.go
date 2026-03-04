@@ -10,17 +10,17 @@ import (
 )
 
 type mockVPCAPI struct {
-	describeVpcsFunc                     func(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error)
-	describeSubnetsFunc                  func(ctx context.Context, params *awsec2.DescribeSubnetsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSubnetsOutput, error)
-	describeSecurityGroupsFunc           func(ctx context.Context, params *awsec2.DescribeSecurityGroupsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupsOutput, error)
-	describeInternetGatewaysFunc         func(ctx context.Context, params *awsec2.DescribeInternetGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeInternetGatewaysOutput, error)
-	describeRouteTablesFunc              func(ctx context.Context, params *awsec2.DescribeRouteTablesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeRouteTablesOutput, error)
-	describeNatGatewaysFunc              func(ctx context.Context, params *awsec2.DescribeNatGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNatGatewaysOutput, error)
-	describeSecurityGroupRulesFunc       func(ctx context.Context, params *awsec2.DescribeSecurityGroupRulesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupRulesOutput, error)
-	describeVpcEndpointsFunc             func(ctx context.Context, params *awsec2.DescribeVpcEndpointsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcEndpointsOutput, error)
-	describeVpcPeeringConnectionsFunc    func(ctx context.Context, params *awsec2.DescribeVpcPeeringConnectionsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcPeeringConnectionsOutput, error)
-	describeNetworkAclsFunc              func(ctx context.Context, params *awsec2.DescribeNetworkAclsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNetworkAclsOutput, error)
-	describeFlowLogsFunc                 func(ctx context.Context, params *awsec2.DescribeFlowLogsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeFlowLogsOutput, error)
+	describeVpcsFunc                  func(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error)
+	describeSubnetsFunc               func(ctx context.Context, params *awsec2.DescribeSubnetsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSubnetsOutput, error)
+	describeSecurityGroupsFunc        func(ctx context.Context, params *awsec2.DescribeSecurityGroupsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupsOutput, error)
+	describeInternetGatewaysFunc      func(ctx context.Context, params *awsec2.DescribeInternetGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeInternetGatewaysOutput, error)
+	describeRouteTablesFunc           func(ctx context.Context, params *awsec2.DescribeRouteTablesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeRouteTablesOutput, error)
+	describeNatGatewaysFunc           func(ctx context.Context, params *awsec2.DescribeNatGatewaysInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNatGatewaysOutput, error)
+	describeSecurityGroupRulesFunc    func(ctx context.Context, params *awsec2.DescribeSecurityGroupRulesInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeSecurityGroupRulesOutput, error)
+	describeVpcEndpointsFunc          func(ctx context.Context, params *awsec2.DescribeVpcEndpointsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcEndpointsOutput, error)
+	describeVpcPeeringConnectionsFunc func(ctx context.Context, params *awsec2.DescribeVpcPeeringConnectionsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcPeeringConnectionsOutput, error)
+	describeNetworkAclsFunc           func(ctx context.Context, params *awsec2.DescribeNetworkAclsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeNetworkAclsOutput, error)
+	describeFlowLogsFunc              func(ctx context.Context, params *awsec2.DescribeFlowLogsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeFlowLogsOutput, error)
 }
 
 func (m *mockVPCAPI) DescribeVpcs(ctx context.Context, params *awsec2.DescribeVpcsInput, optFns ...func(*awsec2.Options)) (*awsec2.DescribeVpcsOutput, error) {
@@ -163,10 +163,10 @@ func TestListRouteTables(t *testing.T) {
 								Origin:               types.RouteOriginCreateRoute,
 							},
 							{
-								DestinationPrefixListId:  awssdk.String("pl-abc"),
-								VpcPeeringConnectionId:   awssdk.String("pcx-111"),
-								State:                    types.RouteStateActive,
-								Origin:                   types.RouteOriginCreateRoute,
+								DestinationPrefixListId: awssdk.String("pl-abc"),
+								VpcPeeringConnectionId:  awssdk.String("pcx-111"),
+								State:                   types.RouteStateActive,
+								Origin:                  types.RouteOriginCreateRoute,
 							},
 							{
 								DestinationCidrBlock: awssdk.String("192.168.0.0/16"),
@@ -397,10 +397,10 @@ func TestListSecurityGroupRules(t *testing.T) {
 						},
 					},
 					{
-						IsEgress:    awssdk.Bool(false),
-						IpProtocol:  awssdk.String("1"),
-						FromPort:    awssdk.Int32(-1),
-						ToPort:      awssdk.Int32(-1),
+						IsEgress:     awssdk.Bool(false),
+						IpProtocol:   awssdk.String("1"),
+						FromPort:     awssdk.Int32(-1),
+						ToPort:       awssdk.Int32(-1),
 						PrefixListId: awssdk.String("pl-vpce"),
 						Description:  awssdk.String("ICMP from prefix list"),
 					},

@@ -11,16 +11,16 @@ import (
 )
 
 type mockEKSAPI struct {
-	listClustersFunc          func(ctx context.Context, params *awseks.ListClustersInput, optFns ...func(*awseks.Options)) (*awseks.ListClustersOutput, error)
-	describeClusterFunc       func(ctx context.Context, params *awseks.DescribeClusterInput, optFns ...func(*awseks.Options)) (*awseks.DescribeClusterOutput, error)
-	listNodegroupsFunc        func(ctx context.Context, params *awseks.ListNodegroupsInput, optFns ...func(*awseks.Options)) (*awseks.ListNodegroupsOutput, error)
-	describeNodegroupFunc     func(ctx context.Context, params *awseks.DescribeNodegroupInput, optFns ...func(*awseks.Options)) (*awseks.DescribeNodegroupOutput, error)
-	listAddonsFunc            func(ctx context.Context, params *awseks.ListAddonsInput, optFns ...func(*awseks.Options)) (*awseks.ListAddonsOutput, error)
-	describeAddonFunc         func(ctx context.Context, params *awseks.DescribeAddonInput, optFns ...func(*awseks.Options)) (*awseks.DescribeAddonOutput, error)
-	listFargateProfilesFunc   func(ctx context.Context, params *awseks.ListFargateProfilesInput, optFns ...func(*awseks.Options)) (*awseks.ListFargateProfilesOutput, error)
+	listClustersFunc           func(ctx context.Context, params *awseks.ListClustersInput, optFns ...func(*awseks.Options)) (*awseks.ListClustersOutput, error)
+	describeClusterFunc        func(ctx context.Context, params *awseks.DescribeClusterInput, optFns ...func(*awseks.Options)) (*awseks.DescribeClusterOutput, error)
+	listNodegroupsFunc         func(ctx context.Context, params *awseks.ListNodegroupsInput, optFns ...func(*awseks.Options)) (*awseks.ListNodegroupsOutput, error)
+	describeNodegroupFunc      func(ctx context.Context, params *awseks.DescribeNodegroupInput, optFns ...func(*awseks.Options)) (*awseks.DescribeNodegroupOutput, error)
+	listAddonsFunc             func(ctx context.Context, params *awseks.ListAddonsInput, optFns ...func(*awseks.Options)) (*awseks.ListAddonsOutput, error)
+	describeAddonFunc          func(ctx context.Context, params *awseks.DescribeAddonInput, optFns ...func(*awseks.Options)) (*awseks.DescribeAddonOutput, error)
+	listFargateProfilesFunc    func(ctx context.Context, params *awseks.ListFargateProfilesInput, optFns ...func(*awseks.Options)) (*awseks.ListFargateProfilesOutput, error)
 	describeFargateProfileFunc func(ctx context.Context, params *awseks.DescribeFargateProfileInput, optFns ...func(*awseks.Options)) (*awseks.DescribeFargateProfileOutput, error)
-	listAccessEntriesFunc     func(ctx context.Context, params *awseks.ListAccessEntriesInput, optFns ...func(*awseks.Options)) (*awseks.ListAccessEntriesOutput, error)
-	describeAccessEntryFunc   func(ctx context.Context, params *awseks.DescribeAccessEntryInput, optFns ...func(*awseks.Options)) (*awseks.DescribeAccessEntryOutput, error)
+	listAccessEntriesFunc      func(ctx context.Context, params *awseks.ListAccessEntriesInput, optFns ...func(*awseks.Options)) (*awseks.ListAccessEntriesOutput, error)
+	describeAccessEntryFunc    func(ctx context.Context, params *awseks.DescribeAccessEntryInput, optFns ...func(*awseks.Options)) (*awseks.DescribeAccessEntryOutput, error)
 }
 
 func (m *mockEKSAPI) ListClusters(ctx context.Context, params *awseks.ListClustersInput, optFns ...func(*awseks.Options)) (*awseks.ListClustersOutput, error) {
@@ -310,12 +310,12 @@ func TestListAddons(t *testing.T) {
 			case "vpc-cni":
 				return &awseks.DescribeAddonOutput{
 					Addon: &ekstypes.Addon{
-						AddonName:           awssdk.String("vpc-cni"),
-						AddonArn:            awssdk.String("arn:aws:eks:us-east-1:123456789012:addon/my-cluster/vpc-cni/abc"),
-						AddonVersion:        awssdk.String("v1.14.1-eksbuild.1"),
-						Status:              ekstypes.AddonStatusActive,
+						AddonName:             awssdk.String("vpc-cni"),
+						AddonArn:              awssdk.String("arn:aws:eks:us-east-1:123456789012:addon/my-cluster/vpc-cni/abc"),
+						AddonVersion:          awssdk.String("v1.14.1-eksbuild.1"),
+						Status:                ekstypes.AddonStatusActive,
 						ServiceAccountRoleArn: awssdk.String("arn:aws:iam::123456789012:role/vpc-cni-role"),
-						ConfigurationValues: awssdk.String(`{"env":{"WARM_ENI_TARGET":"1"}}`),
+						ConfigurationValues:   awssdk.String(`{"env":{"WARM_ENI_TARGET":"1"}}`),
 						Health: &ekstypes.AddonHealth{
 							Issues: []ekstypes.AddonIssue{},
 						},
@@ -389,9 +389,9 @@ func TestListFargateProfiles(t *testing.T) {
 			}
 			return &awseks.DescribeFargateProfileOutput{
 				FargateProfile: &ekstypes.FargateProfile{
-					FargateProfileName: awssdk.String("fp-default"),
-					FargateProfileArn:  awssdk.String("arn:aws:eks:us-east-1:123456789012:fargateprofile/my-cluster/fp-default/abc"),
-					Status:             ekstypes.FargateProfileStatusActive,
+					FargateProfileName:  awssdk.String("fp-default"),
+					FargateProfileArn:   awssdk.String("arn:aws:eks:us-east-1:123456789012:fargateprofile/my-cluster/fp-default/abc"),
+					Status:              ekstypes.FargateProfileStatusActive,
 					PodExecutionRoleArn: awssdk.String("arn:aws:iam::123456789012:role/fargate-pod-role"),
 					Selectors: []ekstypes.FargateProfileSelector{
 						{

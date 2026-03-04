@@ -3,14 +3,15 @@ package ecs
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
-	"tasnim.dev/aws-tui/internal/utils"
 )
 
+// ECSAPI defines the subset of the ECS SDK client used by this package.
 type ECSAPI interface {
 	ListClusters(ctx context.Context, params *awsecs.ListClustersInput, optFns ...func(*awsecs.Options)) (*awsecs.ListClustersOutput, error)
 	DescribeClusters(ctx context.Context, params *awsecs.DescribeClustersInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeClustersOutput, error)
@@ -21,14 +22,153 @@ type ECSAPI interface {
 	DescribeTaskDefinition(ctx context.Context, params *awsecs.DescribeTaskDefinitionInput, optFns ...func(*awsecs.Options)) (*awsecs.DescribeTaskDefinitionOutput, error)
 }
 
+// Client wraps an ECSAPI for higher-level operations.
 type Client struct {
 	api ECSAPI
 }
 
+// NewClient creates a new ECS Client.
 func NewClient(api ECSAPI) *Client {
 	return &Client{api: api}
 }
 
+// shortName extracts the last segment after "/" from an ARN or path.
+func shortName(arn string) string {
+	if parts := strings.Split(arn, "/"); len(parts) > 1 {
+		return parts[len(parts)-1]
+	}
+	return arn
+}
+
+// --- Domain types ---
+
+// ECSCluster represents a single ECS cluster.
+type ECSCluster struct {
+	Name             string
+	ARN              string
+	Status           string
+	RunningTaskCount int
+	ServiceCount     int
+}
+
+// ECSService represents a single ECS service.
+type ECSService struct {
+	Name         string
+	ARN          string
+	Status       string
+	DesiredCount int
+	RunningCount int
+	PendingCount int
+	TaskDef      string
+}
+
+// ECSServiceDetail holds extended information about an ECS service.
+type ECSServiceDetail struct {
+	Name                 string
+	ARN                  string
+	Status               string
+	DesiredCount         int
+	RunningCount         int
+	PendingCount         int
+	TaskDef              string
+	LaunchType           string
+	EnableExecuteCommand bool
+	Events               []ECSServiceEvent
+	Deployments          []ECSDeployment
+	LoadBalancers        []ECSLoadBalancerRef
+	PlacementConstraints []ECSPlacementConstraint
+	PlacementStrategy    []ECSPlacementStrategy
+}
+
+// ECSServiceEvent represents a service event entry.
+type ECSServiceEvent struct {
+	ID        string
+	CreatedAt time.Time
+	Message   string
+}
+
+// ECSDeployment represents a single deployment.
+type ECSDeployment struct {
+	ID           string
+	Status       string
+	TaskDef      string
+	DesiredCount int
+	RunningCount int
+	PendingCount int
+	RolloutState string
+	CreatedAt    time.Time
+}
+
+// ECSLoadBalancerRef holds a load balancer reference for a service.
+type ECSLoadBalancerRef struct {
+	TargetGroupARN string
+	ContainerName  string
+	ContainerPort  int
+}
+
+// ECSPlacementConstraint holds a placement constraint.
+type ECSPlacementConstraint struct {
+	Type       string
+	Expression string
+}
+
+// ECSPlacementStrategy holds a placement strategy.
+type ECSPlacementStrategy struct {
+	Type  string
+	Field string
+}
+
+// ECSTask represents a single ECS task.
+type ECSTask struct {
+	TaskID       string
+	ARN          string
+	Status       string
+	TaskDef      string
+	StartedAt    time.Time
+	HealthStatus string
+}
+
+// ECSTaskDetail holds extended information about an ECS task.
+type ECSTaskDetail struct {
+	TaskID      string
+	TaskARN     string
+	Status      string
+	TaskDef     string
+	StartedAt   time.Time
+	StoppedAt   time.Time
+	StopCode    string
+	StopReason  string
+	CPU         string
+	Memory      string
+	Containers  []ECSContainerDetail
+	NetworkMode string
+	PrivateIP   string
+	SubnetID    string
+}
+
+// EnvVar holds a key-value environment variable.
+type EnvVar struct {
+	Name  string
+	Value string
+}
+
+// ECSContainerDetail holds details about a single container in a task.
+type ECSContainerDetail struct {
+	Name         string
+	Image        string
+	Status       string
+	ExitCode     *int
+	LogGroup     string
+	LogStream    string
+	CPU          int
+	Memory       int
+	HealthStatus string
+	Environment  []EnvVar
+}
+
+// --- Methods ---
+
+// ListClusters fetches all ECS clusters across all pages.
 func (c *Client) ListClusters(ctx context.Context) ([]ECSCluster, error) {
 	var allARNs []string
 	var nextToken *string
@@ -73,6 +213,7 @@ func (c *Client) ListClusters(ctx context.Context) ([]ECSCluster, error) {
 	return clusters, nil
 }
 
+// ListServices fetches all ECS services for a cluster across all pages.
 func (c *Client) ListServices(ctx context.Context, clusterName string) ([]ECSService, error) {
 	var allARNs []string
 	var nextToken *string
@@ -107,7 +248,7 @@ func (c *Client) ListServices(ctx context.Context, clusterName string) ([]ECSSer
 			return nil, fmt.Errorf("DescribeServices: %w", err)
 		}
 		for _, svc := range descOut.Services {
-			taskDef := utils.ShortName(aws.ToString(svc.TaskDefinition))
+			taskDef := shortName(aws.ToString(svc.TaskDefinition))
 			services = append(services, ECSService{
 				Name:         aws.ToString(svc.ServiceName),
 				ARN:          aws.ToString(svc.ServiceArn),
@@ -122,6 +263,7 @@ func (c *Client) ListServices(ctx context.Context, clusterName string) ([]ECSSer
 	return services, nil
 }
 
+// ListTasks fetches all ECS tasks for a service across all pages.
 func (c *Client) ListTasks(ctx context.Context, clusterName, serviceName string) ([]ECSTask, error) {
 	var allARNs []string
 	var nextToken *string
@@ -158,8 +300,8 @@ func (c *Client) ListTasks(ctx context.Context, clusterName, serviceName string)
 		}
 		for _, t := range descOut.Tasks {
 			taskARN := aws.ToString(t.TaskArn)
-			taskID := utils.ShortName(taskARN)
-			taskDef := utils.ShortName(aws.ToString(t.TaskDefinitionArn))
+			taskID := shortName(taskARN)
+			taskDef := shortName(aws.ToString(t.TaskDefinitionArn))
 
 			var startedAt time.Time
 			if t.StartedAt != nil {
@@ -230,6 +372,7 @@ func buildContainerDetails(containers []ecstypes.Container, logConfigs map[strin
 	return details
 }
 
+// DescribeTask fetches extended details for a single ECS task.
 func (c *Client) DescribeTask(ctx context.Context, clusterName, taskARN string) (*ECSTaskDetail, error) {
 	descOut, err := c.api.DescribeTasks(ctx, &awsecs.DescribeTasksInput{
 		Cluster: aws.String(clusterName),
@@ -244,9 +387,9 @@ func (c *Client) DescribeTask(ctx context.Context, clusterName, taskARN string) 
 
 	t := descOut.Tasks[0]
 
-	taskID := utils.ShortName(aws.ToString(t.TaskArn))
+	taskID := shortName(aws.ToString(t.TaskArn))
 	taskDef := aws.ToString(t.TaskDefinitionArn)
-	taskDefShort := utils.ShortName(taskDef)
+	taskDefShort := shortName(taskDef)
 
 	var startedAt, stoppedAt time.Time
 	if t.StartedAt != nil {
@@ -302,6 +445,7 @@ func (c *Client) DescribeTask(ctx context.Context, clusterName, taskARN string) 
 	return detail, nil
 }
 
+// DescribeService fetches extended details for a single ECS service.
 func (c *Client) DescribeService(ctx context.Context, clusterName, serviceName string) (*ECSServiceDetail, error) {
 	descOut, err := c.api.DescribeServices(ctx, &awsecs.DescribeServicesInput{
 		Cluster:  aws.String(clusterName),
@@ -316,7 +460,7 @@ func (c *Client) DescribeService(ctx context.Context, clusterName, serviceName s
 
 	svc := descOut.Services[0]
 
-	taskDef := utils.ShortName(aws.ToString(svc.TaskDefinition))
+	taskDef := shortName(aws.ToString(svc.TaskDefinition))
 
 	detail := &ECSServiceDetail{
 		Name:                 aws.ToString(svc.ServiceName),
@@ -343,7 +487,7 @@ func (c *Client) DescribeService(ctx context.Context, clusterName, serviceName s
 	}
 
 	for _, d := range svc.Deployments {
-		depTaskDef := utils.ShortName(aws.ToString(d.TaskDefinition))
+		depTaskDef := shortName(aws.ToString(d.TaskDefinition))
 		var createdAt time.Time
 		if d.CreatedAt != nil {
 			createdAt = *d.CreatedAt
@@ -444,7 +588,7 @@ func (c *Client) ListServicesPage(ctx context.Context, clusterName string, token
 			return nil, nil, fmt.Errorf("DescribeServices: %w", err)
 		}
 		for _, svc := range descOut.Services {
-			taskDef := utils.ShortName(aws.ToString(svc.TaskDefinition))
+			taskDef := shortName(aws.ToString(svc.TaskDefinition))
 			services = append(services, ECSService{
 				Name:         aws.ToString(svc.ServiceName),
 				ARN:          aws.ToString(svc.ServiceArn),
@@ -485,8 +629,8 @@ func (c *Client) ListTasksPage(ctx context.Context, clusterName, serviceName str
 	tasks := make([]ECSTask, 0, len(descOut.Tasks))
 	for _, t := range descOut.Tasks {
 		taskARN := aws.ToString(t.TaskArn)
-		taskID := utils.ShortName(taskARN)
-		taskDef := utils.ShortName(aws.ToString(t.TaskDefinitionArn))
+		taskID := shortName(taskARN)
+		taskDef := shortName(aws.ToString(t.TaskDefinitionArn))
 
 		var startedAt time.Time
 		if t.StartedAt != nil {

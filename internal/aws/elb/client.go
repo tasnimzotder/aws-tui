@@ -3,12 +3,12 @@ package elb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
-	"tasnim.dev/aws-tui/internal/utils"
 )
 
 type ELBAPI interface {
@@ -321,44 +321,6 @@ func (c *Client) GetResourceTags(ctx context.Context, arns []string) (map[string
 	return result, nil
 }
 
-func joinStrings(ss []string) string {
-	if len(ss) == 1 {
-		return ss[0]
-	}
-	result := ""
-	for i, s := range ss {
-		if i > 0 {
-			result += ", "
-		}
-		result += s
-	}
-	return result
-}
-
-func formatAction(actions []elbtypes.Action) string {
-	if len(actions) == 0 {
-		return "—"
-	}
-	a := actions[0]
-	switch a.Type {
-	case elbtypes.ActionTypeEnumForward:
-		name := utils.SecondToLast(aws.ToString(a.TargetGroupArn))
-		return "forward → " + name
-	case elbtypes.ActionTypeEnumRedirect:
-		if a.RedirectConfig != nil {
-			return "redirect → " + aws.ToString(a.RedirectConfig.Host)
-		}
-		return "redirect"
-	case elbtypes.ActionTypeEnumFixedResponse:
-		if a.FixedResponseConfig != nil {
-			return "fixed-response " + aws.ToString(a.FixedResponseConfig.StatusCode)
-		}
-		return "fixed-response"
-	default:
-		return string(a.Type)
-	}
-}
-
 // ListLoadBalancersPage fetches a single page of load balancers.
 func (c *Client) ListLoadBalancersPage(ctx context.Context, marker *string) ([]ELBLoadBalancer, *string, error) {
 	out, err := c.api.DescribeLoadBalancers(ctx, &elbv2.DescribeLoadBalancersInput{
@@ -391,4 +353,51 @@ func (c *Client) ListLoadBalancersPage(ctx context.Context, marker *string) ([]E
 	}
 
 	return lbs, out.NextMarker, nil
+}
+
+func joinStrings(ss []string) string {
+	if len(ss) == 1 {
+		return ss[0]
+	}
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += ", "
+		}
+		result += s
+	}
+	return result
+}
+
+// secondToLast extracts the second-to-last "/" segment from an ARN.
+func secondToLast(arn string) string {
+	parts := strings.Split(arn, "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2]
+	}
+	return arn
+}
+
+func formatAction(actions []elbtypes.Action) string {
+	if len(actions) == 0 {
+		return "—"
+	}
+	a := actions[0]
+	switch a.Type {
+	case elbtypes.ActionTypeEnumForward:
+		name := secondToLast(aws.ToString(a.TargetGroupArn))
+		return "forward → " + name
+	case elbtypes.ActionTypeEnumRedirect:
+		if a.RedirectConfig != nil {
+			return "redirect → " + aws.ToString(a.RedirectConfig.Host)
+		}
+		return "redirect"
+	case elbtypes.ActionTypeEnumFixedResponse:
+		if a.FixedResponseConfig != nil {
+			return "fixed-response " + aws.ToString(a.FixedResponseConfig.StatusCode)
+		}
+		return "fixed-response"
+	default:
+		return string(a.Type)
+	}
 }

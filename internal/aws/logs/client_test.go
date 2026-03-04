@@ -21,15 +21,15 @@ func (m *mockLogsAPI) GetLogEvents(ctx context.Context, params *cloudwatchlogs.G
 
 func TestGetLatestLogEvents(t *testing.T) {
 	tests := []struct {
-		name           string
-		logGroup       string
-		logStream      string
-		limit          int
-		mockEvents     []cwltypes.OutputLogEvent
-		mockToken      *string
-		wantCount      int
-		wantFirstMsg   string
-		wantToken      string
+		name         string
+		logGroup     string
+		logStream    string
+		limit        int
+		mockEvents   []cwltypes.OutputLogEvent
+		mockToken    *string
+		wantCount    int
+		wantFirstMsg string
+		wantToken    string
 	}{
 		{
 			name:      "returns multiple events",

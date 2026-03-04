@@ -19,6 +19,11 @@ type IAMAPI interface {
 	ListGroupsForUser(ctx context.Context, params *awsiam.ListGroupsForUserInput, optFns ...func(*awsiam.Options)) (*awsiam.ListGroupsForUserOutput, error)
 	ListAttachedRolePolicies(ctx context.Context, params *awsiam.ListAttachedRolePoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListAttachedRolePoliciesOutput, error)
 	ListEntitiesForPolicy(ctx context.Context, params *awsiam.ListEntitiesForPolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.ListEntitiesForPolicyOutput, error)
+	GetPolicyVersion(ctx context.Context, params *awsiam.GetPolicyVersionInput, optFns ...func(*awsiam.Options)) (*awsiam.GetPolicyVersionOutput, error)
+	ListUserPolicies(ctx context.Context, params *awsiam.ListUserPoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListUserPoliciesOutput, error)
+	GetUserPolicy(ctx context.Context, params *awsiam.GetUserPolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.GetUserPolicyOutput, error)
+	ListRolePolicies(ctx context.Context, params *awsiam.ListRolePoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListRolePoliciesOutput, error)
+	GetRolePolicy(ctx context.Context, params *awsiam.GetRolePolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.GetRolePolicyOutput, error)
 }
 
 type Client struct {
@@ -135,13 +140,14 @@ func (c *Client) ListPolicies(ctx context.Context) ([]IAMPolicy, error) {
 			}
 
 			policies = append(policies, IAMPolicy{
-				Name:            aws.ToString(p.PolicyName),
-				PolicyID:        aws.ToString(p.PolicyId),
-				ARN:             aws.ToString(p.Arn),
-				Path:            aws.ToString(p.Path),
-				AttachmentCount: attachmentCount,
-				CreatedAt:       createdAt,
-				UpdatedAt:       updatedAt,
+				Name:             aws.ToString(p.PolicyName),
+				PolicyID:         aws.ToString(p.PolicyId),
+				ARN:              aws.ToString(p.Arn),
+				Path:             aws.ToString(p.Path),
+				AttachmentCount:  attachmentCount,
+				DefaultVersionID: aws.ToString(p.DefaultVersionId),
+				CreatedAt:        createdAt,
+				UpdatedAt:        updatedAt,
 			})
 		}
 
@@ -355,6 +361,96 @@ func (c *Client) ListRolesPage(ctx context.Context, marker *string) ([]IAMRole, 
 	return roles, nextMarker, nil
 }
 
+// GetPolicyDocument fetches the default version document for a managed policy.
+func (c *Client) GetPolicyDocument(ctx context.Context, policyARN, versionID string) (string, error) {
+	out, err := c.api.GetPolicyVersion(ctx, &awsiam.GetPolicyVersionInput{
+		PolicyArn: aws.String(policyARN),
+		VersionId: aws.String(versionID),
+	})
+	if err != nil {
+		return "", fmt.Errorf("GetPolicyVersion(%s, %s): %w", policyARN, versionID, err)
+	}
+	doc := aws.ToString(out.PolicyVersion.Document)
+	if decoded, err := url.QueryUnescape(doc); err == nil {
+		doc = decoded
+	}
+	return doc, nil
+}
+
+// ListInlineUserPolicies returns inline policy names and their documents for a user.
+func (c *Client) ListInlineUserPolicies(ctx context.Context, userName string) ([]IAMInlinePolicy, error) {
+	var names []string
+	var marker *string
+	for {
+		out, err := c.api.ListUserPolicies(ctx, &awsiam.ListUserPoliciesInput{
+			UserName: aws.String(userName),
+			Marker:   marker,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("ListUserPolicies(%s): %w", userName, err)
+		}
+		names = append(names, out.PolicyNames...)
+		if !out.IsTruncated {
+			break
+		}
+		marker = out.Marker
+	}
+
+	var policies []IAMInlinePolicy
+	for _, name := range names {
+		out, err := c.api.GetUserPolicy(ctx, &awsiam.GetUserPolicyInput{
+			UserName:   aws.String(userName),
+			PolicyName: aws.String(name),
+		})
+		if err != nil {
+			continue
+		}
+		doc := aws.ToString(out.PolicyDocument)
+		if decoded, err := url.QueryUnescape(doc); err == nil {
+			doc = decoded
+		}
+		policies = append(policies, IAMInlinePolicy{Name: name, Document: doc})
+	}
+	return policies, nil
+}
+
+// ListInlineRolePolicies returns inline policy names and their documents for a role.
+func (c *Client) ListInlineRolePolicies(ctx context.Context, roleName string) ([]IAMInlinePolicy, error) {
+	var names []string
+	var marker *string
+	for {
+		out, err := c.api.ListRolePolicies(ctx, &awsiam.ListRolePoliciesInput{
+			RoleName: aws.String(roleName),
+			Marker:   marker,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("ListRolePolicies(%s): %w", roleName, err)
+		}
+		names = append(names, out.PolicyNames...)
+		if !out.IsTruncated {
+			break
+		}
+		marker = out.Marker
+	}
+
+	var policies []IAMInlinePolicy
+	for _, name := range names {
+		out, err := c.api.GetRolePolicy(ctx, &awsiam.GetRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(name),
+		})
+		if err != nil {
+			continue
+		}
+		doc := aws.ToString(out.PolicyDocument)
+		if decoded, err := url.QueryUnescape(doc); err == nil {
+			doc = decoded
+		}
+		policies = append(policies, IAMInlinePolicy{Name: name, Document: doc})
+	}
+	return policies, nil
+}
+
 // ListPoliciesPage fetches a single page of customer-managed IAM policies.
 func (c *Client) ListPoliciesPage(ctx context.Context, marker *string) ([]IAMPolicy, *string, error) {
 	out, err := c.api.ListPolicies(ctx, &awsiam.ListPoliciesInput{
@@ -379,13 +475,14 @@ func (c *Client) ListPoliciesPage(ctx context.Context, marker *string) ([]IAMPol
 			attachmentCount = int(*p.AttachmentCount)
 		}
 		policies = append(policies, IAMPolicy{
-			Name:            aws.ToString(p.PolicyName),
-			PolicyID:        aws.ToString(p.PolicyId),
-			ARN:             aws.ToString(p.Arn),
-			Path:            aws.ToString(p.Path),
-			AttachmentCount: attachmentCount,
-			CreatedAt:       createdAt,
-			UpdatedAt:       updatedAt,
+			Name:             aws.ToString(p.PolicyName),
+			PolicyID:         aws.ToString(p.PolicyId),
+			ARN:              aws.ToString(p.Arn),
+			Path:             aws.ToString(p.Path),
+			AttachmentCount:  attachmentCount,
+			DefaultVersionID: aws.ToString(p.DefaultVersionId),
+			CreatedAt:        createdAt,
+			UpdatedAt:        updatedAt,
 		})
 	}
 

@@ -36,7 +36,7 @@ func TestListInstances(t *testing.T) {
 							InstanceType:     types.InstanceTypeT3Medium,
 							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
 							PrivateIpAddress: awssdk.String("10.0.1.50"),
-							PublicIpAddress:   awssdk.String("54.21.3.100"),
+							PublicIpAddress:  awssdk.String("54.21.3.100"),
 							Tags:             []types.Tag{{Key: awssdk.String("Name"), Value: awssdk.String("web-server")}},
 							LaunchTime:       &launchTime,
 							Placement:        &types.Placement{AvailabilityZone: awssdk.String("us-east-1a")},
@@ -82,21 +82,19 @@ func TestListInstances(t *testing.T) {
 		t.Fatalf("expected 2 instances, got %d", len(instances))
 	}
 
-	// Original assertions
 	if instances[0].Name != "web-server" {
 		t.Errorf("instances[0].Name = %s, want web-server", instances[0].Name)
 	}
 	if instances[0].PublicIP != "54.21.3.100" {
 		t.Errorf("instances[0].PublicIP = %s, want 54.21.3.100", instances[0].PublicIP)
 	}
-	if instances[1].PublicIP != "—" {
-		t.Errorf("instances[1].PublicIP = %s, want —", instances[1].PublicIP)
+	if instances[1].PublicIP != "\u2014" {
+		t.Errorf("instances[1].PublicIP = %s, want \u2014", instances[1].PublicIP)
 	}
 	if summary.Total != 2 || summary.Running != 1 || summary.Stopped != 1 {
 		t.Errorf("unexpected summary: %+v", summary)
 	}
 
-	// New field assertions
 	inst := instances[0]
 	if inst.AZ != "us-east-1a" {
 		t.Errorf("AZ = %s, want us-east-1a", inst.AZ)
@@ -228,16 +226,16 @@ func TestGetInstanceVolumes_Empty(t *testing.T) {
 
 func TestListInstancesPage(t *testing.T) {
 	tt := []struct {
-		name           string
-		inputToken     *string
+		name             string
+		inputToken       *string
 		mockReservations []types.Reservation
-		mockNextToken  *string
-		wantLen        int
-		wantNextToken  *string
-		wantRunning    int
-		wantStopped    int
-		wantTotal      int
-		wantInstanceID string
+		mockNextToken    *string
+		wantLen          int
+		wantNextToken    *string
+		wantRunning      int
+		wantStopped      int
+		wantTotal        int
+		wantInstanceID   string
 	}{
 		{
 			name:       "single page no next token",

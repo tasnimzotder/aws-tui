@@ -683,7 +683,7 @@ func TestAggregateUsage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			agg := aggregateUsage(tt.output, tt.today, tt.yesterday)
+			agg := aggregateUsage(tt.output, tt.today, tt.yesterday, "UnblendedCost")
 			if agg.todaySpend != tt.wantTodaySpend {
 				t.Errorf("todaySpend = %f, want %f", agg.todaySpend, tt.wantTodaySpend)
 			}
@@ -708,11 +708,11 @@ func TestAggregateUsage(t *testing.T) {
 
 func TestExtractMoMSpend(t *testing.T) {
 	tests := []struct {
-		name              string
-		lastMonthRes      usageResult
-		mtdSpend          float64
+		name               string
+		lastMonthRes       usageResult
+		mtdSpend           float64
 		wantLastMonthSpend float64
-		wantMoMPercent    float64
+		wantMoMPercent     float64
 	}{
 		{
 			name: "normal comparison",
@@ -787,7 +787,7 @@ func TestExtractMoMSpend(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lastMonthSpend, momPercent := extractMoMSpend(tt.lastMonthRes, tt.mtdSpend)
+			lastMonthSpend, momPercent := extractMoMSpend(tt.lastMonthRes, tt.mtdSpend, "UnblendedCost")
 			if lastMonthSpend != tt.wantLastMonthSpend {
 				t.Errorf("lastMonthMTDSpend = %f, want %f", lastMonthSpend, tt.wantLastMonthSpend)
 			}

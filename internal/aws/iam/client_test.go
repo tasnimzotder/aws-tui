@@ -18,6 +18,11 @@ type mockIAMAPI struct {
 	listGroupsForUserFunc        func(ctx context.Context, params *awsiam.ListGroupsForUserInput, optFns ...func(*awsiam.Options)) (*awsiam.ListGroupsForUserOutput, error)
 	listAttachedRolePoliciesFunc func(ctx context.Context, params *awsiam.ListAttachedRolePoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListAttachedRolePoliciesOutput, error)
 	listEntitiesForPolicyFunc    func(ctx context.Context, params *awsiam.ListEntitiesForPolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.ListEntitiesForPolicyOutput, error)
+	getPolicyVersionFunc         func(ctx context.Context, params *awsiam.GetPolicyVersionInput, optFns ...func(*awsiam.Options)) (*awsiam.GetPolicyVersionOutput, error)
+	listUserPoliciesFunc         func(ctx context.Context, params *awsiam.ListUserPoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListUserPoliciesOutput, error)
+	getUserPolicyFunc            func(ctx context.Context, params *awsiam.GetUserPolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.GetUserPolicyOutput, error)
+	listRolePoliciesFunc         func(ctx context.Context, params *awsiam.ListRolePoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListRolePoliciesOutput, error)
+	getRolePolicyFunc            func(ctx context.Context, params *awsiam.GetRolePolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.GetRolePolicyOutput, error)
 }
 
 func (m *mockIAMAPI) ListUsers(ctx context.Context, params *awsiam.ListUsersInput, optFns ...func(*awsiam.Options)) (*awsiam.ListUsersOutput, error) {
@@ -46,6 +51,41 @@ func (m *mockIAMAPI) ListAttachedRolePolicies(ctx context.Context, params *awsia
 
 func (m *mockIAMAPI) ListEntitiesForPolicy(ctx context.Context, params *awsiam.ListEntitiesForPolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.ListEntitiesForPolicyOutput, error) {
 	return m.listEntitiesForPolicyFunc(ctx, params, optFns...)
+}
+
+func (m *mockIAMAPI) GetPolicyVersion(ctx context.Context, params *awsiam.GetPolicyVersionInput, optFns ...func(*awsiam.Options)) (*awsiam.GetPolicyVersionOutput, error) {
+	if m.getPolicyVersionFunc != nil {
+		return m.getPolicyVersionFunc(ctx, params, optFns...)
+	}
+	return &awsiam.GetPolicyVersionOutput{}, nil
+}
+
+func (m *mockIAMAPI) ListUserPolicies(ctx context.Context, params *awsiam.ListUserPoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListUserPoliciesOutput, error) {
+	if m.listUserPoliciesFunc != nil {
+		return m.listUserPoliciesFunc(ctx, params, optFns...)
+	}
+	return &awsiam.ListUserPoliciesOutput{}, nil
+}
+
+func (m *mockIAMAPI) GetUserPolicy(ctx context.Context, params *awsiam.GetUserPolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.GetUserPolicyOutput, error) {
+	if m.getUserPolicyFunc != nil {
+		return m.getUserPolicyFunc(ctx, params, optFns...)
+	}
+	return &awsiam.GetUserPolicyOutput{}, nil
+}
+
+func (m *mockIAMAPI) ListRolePolicies(ctx context.Context, params *awsiam.ListRolePoliciesInput, optFns ...func(*awsiam.Options)) (*awsiam.ListRolePoliciesOutput, error) {
+	if m.listRolePoliciesFunc != nil {
+		return m.listRolePoliciesFunc(ctx, params, optFns...)
+	}
+	return &awsiam.ListRolePoliciesOutput{}, nil
+}
+
+func (m *mockIAMAPI) GetRolePolicy(ctx context.Context, params *awsiam.GetRolePolicyInput, optFns ...func(*awsiam.Options)) (*awsiam.GetRolePolicyOutput, error) {
+	if m.getRolePolicyFunc != nil {
+		return m.getRolePolicyFunc(ctx, params, optFns...)
+	}
+	return &awsiam.GetRolePolicyOutput{}, nil
 }
 
 func TestListUsers(t *testing.T) {

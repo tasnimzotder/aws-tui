@@ -21,13 +21,14 @@ type IAMRole struct {
 }
 
 type IAMPolicy struct {
-	Name            string
-	PolicyID        string
-	ARN             string
-	Path            string
-	AttachmentCount int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	Name             string
+	PolicyID         string
+	ARN              string
+	Path             string
+	AttachmentCount  int
+	DefaultVersionID string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type IAMAttachedPolicy struct {
@@ -43,4 +44,9 @@ type IAMGroup struct {
 type IAMPolicyEntity struct {
 	Name string
 	Type string // "User", "Role", "Group"
+}
+
+type IAMInlinePolicy struct {
+	Name     string
+	Document string // JSON
 }

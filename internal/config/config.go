@@ -4,62 +4,62 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds optional defaults loaded from ~/.config/aws-tui/config.yaml.
 type Config struct {
 	DefaultProfile      string `yaml:"default_profile"`
 	DefaultRegion       string `yaml:"default_region"`
 	AutoRefreshInterval int    `yaml:"auto_refresh_interval"`
+	LastRegion          string `yaml:"last_region,omitempty"`
+	LastProfile         string `yaml:"last_profile,omitempty"`
+
+	path string `yaml:"-"`
 }
 
-// RefreshInterval returns the auto-refresh duration, with a minimum of 5s and default of 15s.
-func (c *Config) RefreshInterval() time.Duration {
-	s := c.AutoRefreshInterval
-	if s <= 0 {
-		s = 15
-	}
-	if s < 5 {
-		s = 5
-	}
-	return time.Duration(s) * time.Second
-}
+func Load(path string) (Config, error) {
+	cfg := Config{path: path}
 
-// Load reads the config file. Returns zero-value Config if the file doesn't exist.
-func Load() (*Config, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return &Config{}, nil
-	}
-
-	path := filepath.Join(home, ".config", "aws-tui", "config.yaml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return &Config{}, nil
+			return applyDefaults(cfg), nil
 		}
-		return nil, err
+		return cfg, err
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+	if len(data) == 0 {
+		return applyDefaults(cfg), nil
 	}
-	return &cfg, nil
+
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return cfg, err
+	}
+
+	cfg.path = path
+	return applyDefaults(cfg), nil
 }
 
-// Merge applies CLI flag overrides. Flags take precedence over config defaults.
-func (c *Config) Merge(profile, region string) (string, string) {
-	p := c.DefaultProfile
-	if profile != "" {
-		p = profile
+func applyDefaults(cfg Config) Config {
+	if cfg.AutoRefreshInterval == 0 {
+		cfg.AutoRefreshInterval = 15
 	}
-	r := c.DefaultRegion
-	if region != "" {
-		r = region
+	return cfg
+}
+
+// Save writes the config back to disk.
+func (c *Config) Save() error {
+	if c.path == "" {
+		return nil
 	}
-	return p, r
+	dir := filepath.Dir(c.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(c.path, data, 0o644)
 }
